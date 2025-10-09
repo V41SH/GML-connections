@@ -1,0 +1,12 @@
+name: connections
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12.7
+  - conda-forge::pandas
+  - conda-forge::networkx
+  - pip:
+    - torch
+    - torch_geometric
+prefix: /opt/miniconda3/envs/connections
