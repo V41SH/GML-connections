@@ -15,6 +15,8 @@ def load_swow_en18(csv_path, strength_col='R123.Strength', min_strength=0.0):
     Returns:
         data (torch_geometric.data.Data): graph data
         G (networkx.DiGraph): networkx graph for reference
+        word2idx (dict): mapping from words to node indices
+        idx2word (dict): mapping from indices to words
     """
     # Load CSV
     df = pd.read_csv(csv_path, sep="\t")
@@ -29,6 +31,7 @@ def load_swow_en18(csv_path, strength_col='R123.Strength', min_strength=0.0):
     
     # Map words to node indices
     word2idx = {word: i for i, word in enumerate(G.nodes())}
+    idx2word = {i: word for word, i in word2idx.items()}
     
     # Build PyTorch Geometric edge index
     edges = [(word2idx[u], word2idx[v]) for u, v in G.edges()]
@@ -45,10 +48,13 @@ def load_swow_en18(csv_path, strength_col='R123.Strength', min_strength=0.0):
     
     data = Data(x=x, edge_index=edge_index, edge_weight=edge_weight)
     
-    return data, G
+    return data, G, word2idx, idx2word
+
 
 # Example usage
-csv_file = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
-data, G = load_swow_en18(csv_file, min_strength=0.05)
-print(data)
-print(f"Nodes: {len(G.nodes())}, Edges: {len(G.edges())}")
+if __name__ == "__main__":
+    csv_file = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
+    data, G, word2idx, idx2word = load_swow_en18(csv_file, min_strength=0.05)
+    print(data)
+    print(f"Nodes: {len(G.nodes())}, Edges: {len(G.edges())}")
+    print(f"Example words: {list(idx2word.values())[:10]}")

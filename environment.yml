@@ -9,4 +9,6 @@ dependencies:
   - pip:
     - torch
     - torch_geometric
-prefix: /opt/miniconda3/envs/connections
+    - node2vec
+    - scikit-learn
+    - matplotlib
