@@ -9,6 +9,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from load_graphs import load_swow_en18
+from load_connections import load_connections_game
 
 
 def train_node2vec(csv_path, min_strength=0.05, dimensions=64, 
@@ -58,8 +59,16 @@ def train_node2vec(csv_path, min_strength=0.05, dimensions=64,
 def plot_embeddings(embedding, words, word2idx, idx2word, title='Word Embeddings'):
     """Plot word embeddings in 2D using PCA."""
     # Filter valid words
+    print("words:")
+    print(words)
+    # TODO remove
+    # normalise words to get more matches
+    for i,word in enumerate(words):
+        words[i] =  word.lower()
     indices = [word2idx[w] for w in words if w in word2idx]
     valid_words = [w for w in words if w in word2idx]
+    print("valid_words:")
+    print(valid_words)
     
     if not valid_words:
         print("No valid words found!")
@@ -98,6 +107,36 @@ def find_similar(embedding, word, word2idx, idx2word, top_k=10):
 
 
 def main():
+    hand_made_test()
+    #test_with_connections()
+   
+
+
+def test_with_connections():
+    """Example usage with specific connections game"""
+    # Configuration
+    CSV_FILE = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
+    MIN_STRENGTH = 0.05
+    DIMENSIONS = 64
+    
+    # Train model
+    embedding, word2idx, idx2word, model = train_node2vec(
+        CSV_FILE, 
+        min_strength=MIN_STRENGTH,
+        dimensions=DIMENSIONS,
+        walk_length=100,
+        num_walks=10,
+        window_size=5,
+        p=1,
+        q=1
+    )
+    
+    # TODO load connections game 870 and print embeddings of all words and then compute similarities 
+    connections_data = load_connections_game("connections_data/Connections_Data.csv", game_id=870)
+    words = connections_data["all_words"]
+    plot_embeddings(embedding, words, word2idx, idx2word, title="Connections Game 870")
+
+def hand_made_test():
     """Example usage."""
     # Configuration
     CSV_FILE = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
