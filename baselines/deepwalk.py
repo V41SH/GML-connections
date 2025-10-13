@@ -107,7 +107,9 @@ def find_similar(embedding, word, word2idx, idx2word, top_k=10):
 
 
 def main():
+    # test saloni made
     hand_made_test()
+    # load and test with latest connections game
     #test_with_connections()
    
 
