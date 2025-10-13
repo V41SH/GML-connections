@@ -8,8 +8,7 @@ from node2vec import Node2Vec
 from sklearn.decomposition import PCA
 from sklearn.metrics.pairwise import cosine_similarity
 import torch
-from torch_geometric.nn import Node2Vec as PyGNode2Vec
-import torch_geometric
+import pickle
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from load_graphs import load_swow_en18
@@ -26,9 +25,10 @@ def train_node2vec(
     workers=4,
     p=1,
     q=1,
+    model_path="models/node2vec_model.pkl",
 ):
     """
-    Train Node2Vec on SWOW data.
+    Train Node2Vec on SWOW data with model saving/loading.
 
     Args:
         csv_path: Path to SWOW CSV file
@@ -40,6 +40,7 @@ def train_node2vec(
         workers: Number of parallel workers
         p: Return parameter (controls backtracking)
         q: In-out parameter (controls exploration)
+        model_path: Path to save/load the Node2Vec model
 
     Returns:
         embedding: Node embeddings (numpy array)
@@ -47,6 +48,21 @@ def train_node2vec(
         idx2word: Index to word mapping
         model: Trained Node2Vec model
     """
+    # Create models directory if it doesn't exist
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+
+    # Try to load existing model
+    if os.path.exists(model_path):
+        print(f"Loading existing model from {model_path}...")
+        with open(model_path, "rb") as f:
+            saved_data = pickle.load(f)
+        return (
+            saved_data["embedding"],
+            saved_data["word2idx"],
+            saved_data["idx2word"],
+            saved_data["model"],
+        )
+
     # Load data
     _, G_directed, word2idx, idx2word = load_swow_en18(
         csv_path, min_strength=min_strength
@@ -72,7 +88,21 @@ def train_node2vec(
 
     # Extract embeddings
     embedding = np.array([model.wv[str(i)] for i in range(len(word2idx))])
-    print(f"Embedding shape: {embedding.shape}\n")
+    print(f"Embedding shape: {embedding.shape}")
+
+    # Save model and related data
+    print(f"Saving model to {model_path}...")
+    with open(model_path, "wb") as f:
+        pickle.dump(
+            {
+                "embedding": embedding,
+                "word2idx": word2idx,
+                "idx2word": idx2word,
+                "model": model,
+            },
+            f,
+        )
+    print("Model saved successfully!")
 
     return embedding, word2idx, idx2word, model
 
@@ -103,13 +133,19 @@ def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings
     plt.scatter(pca_result[:, 0], pca_result[:, 1], alpha=0.6, s=100)
 
     for i, word in enumerate(valid_words):
-        plt.annotate(word, (pca_result[i, 0], pca_result[i, 1]), fontsize=10, alpha=0.8)
+        plt.annotate(
+            word,
+            (pca_result[i, 0], pca_result[i, 1]),
+            fontsize=10,
+            alpha=0.8,
+        )
 
     plt.xlabel("PC1")
     plt.ylabel("PC2")
     plt.title(title)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
+    plt.savefig(f"plots/{title.replace(' ', '_').lower()}.png")
     plt.show()
 
 
@@ -124,13 +160,6 @@ def find_similar(embedding, word, word2idx, idx2word, top_k=10):
     top_indices = np.argsort(similarities)[::-1][1 : top_k + 1]
 
     return [(idx2word[i], similarities[i]) for i in top_indices]
-
-
-def main():
-    # test saloni made
-    hand_made_test()
-    # load and test with latest connections game
-    # test_with_connections()
 
 
 def test_with_connections():
@@ -167,7 +196,7 @@ def hand_made_test():
     MIN_STRENGTH = 0.05
     DIMENSIONS = 64
 
-    # Train model
+    # Train model (or load if exists)
     embedding, word2idx, idx2word, model = train_node2vec(
         CSV_FILE,
         min_strength=MIN_STRENGTH,
@@ -177,6 +206,7 @@ def hand_made_test():
         window_size=5,
         p=1,
         q=1,
+        model_path="models/swow_node2vec_64d.pkl",
     )
 
     # Example 1: Plot semantic categories
@@ -207,11 +237,20 @@ def hand_made_test():
 
 
 def init():
-    if not os.path.exists("plots"):
-        os.mkdir("plots")
+    # Create necessary directories
+    for directory in ["plots", "models"]:
+        if not os.path.exists(directory):
+            os.mkdir(directory)
 
     print(f"CUDA available: {torch.cuda.is_available()}")
     print(f"CUDA devices: {torch.cuda.device_count()}")
+
+
+def main():
+    # test saloni made
+    hand_made_test()
+    # load and test with latest connections game
+    # test_with_connections()
 
 
 if __name__ == "__main__":
