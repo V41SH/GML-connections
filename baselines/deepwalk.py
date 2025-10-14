@@ -107,7 +107,7 @@ def train_node2vec(
     return embedding, word2idx, idx2word, model
 
 
-def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings"):
+def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings", groups=None):
     """Plot word embeddings in 2D using PCA."""
     # Filter valid words
     print("words:")
@@ -127,10 +127,26 @@ def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings
 
     # Apply PCA
     pca_result = PCA(n_components=2).fit_transform(embedding[indices])
-
+    
     # Plot
     plt.figure(figsize=(12, 8))
-    plt.scatter(pca_result[:, 0], pca_result[:, 1], alpha=0.6, s=100)
+    
+    # Use different colors for different groups if provided
+    if groups:
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']  # Different colors for each group
+        for group_idx, group_words in enumerate(groups):
+            group_indices = [i for i, word in enumerate(valid_words) if word in group_words]
+            if group_indices:
+                plt.scatter(
+                    pca_result[group_indices, 0],
+                    pca_result[group_indices, 1],
+                    alpha=0.6,
+                    s=100,
+                    color=colors[group_idx % len(colors)],
+                    label=f'Group {group_idx + 1}'
+                )
+    else:
+        plt.scatter(pca_result[:, 0], pca_result[:, 1], alpha=0.6, s=100)
 
     for i, word in enumerate(valid_words):
         plt.annotate(
@@ -140,6 +156,9 @@ def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings
             alpha=0.8,
         )
 
+    if groups:
+        plt.legend()
+        
     plt.xlabel("PC1")
     plt.ylabel("PC2")
     plt.title(title)
@@ -181,12 +200,77 @@ def test_with_connections():
         q=1,
     )
 
-    # TODO load connections game 870 and print embeddings of all words and then compute similarities
+    # Load connections game data
     connections_data = load_connections_game(
         "connections_data/Connections_Data.csv", game_id=870
     )
     words = connections_data["all_words"]
-    plot_embeddings(embedding, words, word2idx, idx2word, title="Connections Game 870")
+    
+    # Get embeddings for valid words
+    valid_words = [w.lower() for w in words if w.lower() in word2idx]
+    valid_indices = [word2idx[w] for w in valid_words]
+    valid_embeddings = embedding[valid_indices]
+    
+    # Calculate pairwise similarities
+    similarities = cosine_similarity(valid_embeddings)
+    
+    # Create groups based on mutual similarity
+    def group_average_similarity(word_indices, similarities_matrix):
+        """Calculate the average pairwise similarity within a group"""
+        if len(word_indices) <= 1:
+            return 0
+        pair_similarities = []
+        for i in range(len(word_indices)):
+            for j in range(i + 1, len(word_indices)):
+                pair_similarities.append(similarities_matrix[word_indices[i]][word_indices[j]])
+        return np.mean(pair_similarities)
+
+    def find_best_group(available_indices, similarities_matrix, size=4):
+        """Find the group of given size with highest average mutual similarity"""
+        best_group = []
+        best_score = -1
+        
+        # Try each word as a starting point
+        for start_idx in available_indices:
+            # Get similarities to all other available words
+            current_sims = similarities_matrix[start_idx]
+            # Get indices of most similar available words
+            candidate_indices = [i for i in available_indices if i != start_idx]
+            candidate_indices.sort(key=lambda x: current_sims[x], reverse=True)
+            
+            # Try top N most similar words
+            for subset in range(min(10, len(candidate_indices) - size + 2)):
+                potential_group = [start_idx] + candidate_indices[subset:subset + size - 1]
+                if len(potential_group) == size:
+                    score = group_average_similarity(potential_group, similarities_matrix)
+                    if score > best_score:
+                        best_score = score
+                        best_group = potential_group
+        
+        return best_group, best_score
+
+    # Create groups based on mutual similarity
+    groups = []
+    available_indices = set(range(len(valid_words)))
+    
+    while len(available_indices) >= 4:
+        best_group, score = find_best_group(available_indices, similarities)
+        if not best_group or score < 0:
+            break
+            
+        # Add group and remove used words
+        groups.append([valid_words[i] for i in best_group])
+        available_indices -= set(best_group)
+    
+    # Plot with the automatically generated groups
+    plot_embeddings(embedding, words, word2idx, idx2word, 
+                   title="Connections Game 870 (Auto-Grouped)", 
+                   groups=groups)
+    
+    # Print the groups for analysis
+    print("\nAutomatically generated groups based on embedding similarity:")
+    for i, group in enumerate(groups):
+        print(f"Group {i + 1}: {', '.join(group)}")
 
 
 def hand_made_test():
@@ -248,9 +332,9 @@ def init():
 
 def main():
     # test saloni made
-    hand_made_test()
+    # hand_made_test()
     # load and test with latest connections game
-    # test_with_connections()
+    test_with_connections()
 
 
 if __name__ == "__main__":

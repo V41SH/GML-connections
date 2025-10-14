@@ -57,4 +57,4 @@ if __name__ == "__main__":
     data = load_connections_game("connections_data/Connections_Data.csv", game_id=870)
     print(data["game_id"], data["puzzle_date"])
     print(data["groups"].keys())
-    print(data["groups"]["INTO IT"])
+    print(data["groups"])
