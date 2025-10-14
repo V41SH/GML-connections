@@ -13,6 +13,7 @@ import pickle
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from load_graphs import load_swow_en18
 from load_connections import load_connections_game
+from utils import get_proxy_words
 
 
 def train_node2vec(
@@ -106,6 +107,17 @@ def train_node2vec(
 
     return embedding, word2idx, idx2word, model
 
+def get_word_embedding(word, embedding, word2idx, idx2word):
+    """
+    Returns the graph-space embedding for a possibly OOV word.
+    """
+    proxies = get_proxy_words(word, word2idx, embedding, idx2word)
+    if not proxies:
+        return None
+    vecs = [embedding[word2idx[p]] for p in proxies if p in word2idx]
+    if not vecs:
+        return None
+    return np.mean(vecs, axis=0)
 
 def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings", groups=None):
     """Plot word embeddings in 2D using PCA."""
@@ -207,10 +219,23 @@ def test_with_connections():
     words = connections_data["all_words"]
     
     # Get embeddings for valid words
-    valid_words = [w.lower() for w in words if w.lower() in word2idx]
-    valid_indices = [word2idx[w] for w in valid_words]
-    valid_embeddings = embedding[valid_indices]
+    # valid_words = [w.lower() for w in words if w.lower() in word2idx]
+    # valid_indices = [word2idx[w] for w in valid_words]
+    # valid_embeddings = embedding[valid_indices]
     
+    # --- Get embeddings for all words, with OOV fallback ---
+    valid_words, valid_embeddings = [], []
+    for w in words:
+        emb = get_word_embedding(w, embedding, word2idx, idx2word)
+        if emb is not None:
+            valid_words.append(w.lower())
+            valid_embeddings.append(emb)
+        else:
+            print(f"[OOV skipped] {w}")
+
+    valid_embeddings = np.stack(valid_embeddings)
+
+
     # Calculate pairwise similarities
     similarities = cosine_similarity(valid_embeddings)
     
