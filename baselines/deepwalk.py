@@ -64,7 +64,7 @@ def train_node2vec(
         )
 
     # Load data
-    _, G_directed, word2idx, idx2word = load_swow_en18(
+    _, G_directed, word2idx, idx2word, idx2embedding = load_swow_en18(
         csv_path, min_strength=min_strength
     )
     print(f"Loaded: {len(G_directed.nodes())} nodes, {len(G_directed.edges())} edges")
@@ -104,7 +104,7 @@ def train_node2vec(
         )
     print("Model saved successfully!")
 
-    return embedding, word2idx, idx2word, model
+    return embedding, word2idx, idx2word, idx2embedding, model
 
 
 def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings", groups=None):
@@ -208,6 +208,13 @@ def test_with_connections():
     
     # Get embeddings for valid words
     valid_words = [w.lower() for w in words if w.lower() in word2idx]
+    
+    for nonword in set(words) - set(valid_words):
+        pass
+    
+    
+    
+    
     valid_indices = [word2idx[w] for w in valid_words]
     valid_embeddings = embedding[valid_indices]
     
