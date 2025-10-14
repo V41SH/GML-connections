@@ -3,9 +3,6 @@ import torch
 import networkx as nx
 from torch_geometric.data import Data
 
-import fasttext.util
-fasttext.util.download_model('en', if_exists='ignore')  # English
-ft = fasttext.load_model('cc.en.300.bin')
 
 def load_swow_en18(csv_path, strength_col='R123.Strength', min_strength=0.0):
     """
@@ -19,7 +16,7 @@ def load_swow_en18(csv_path, strength_col='R123.Strength', min_strength=0.0):
     all_words = pd.Index(df['cue']).append(pd.Index(df['response'])).unique()
  
     # get embeddings for all words. costly, but whatever.
-    all_embeddings = all_words.map(ft.get_word_vector)
+    # all_embeddings = all_words.map(ft.get_word_vector)
  
     word2idx = pd.Series(range(len(all_words)), index=all_words)
     idx2word = dict(enumerate(all_words))
