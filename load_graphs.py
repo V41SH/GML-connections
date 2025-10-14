@@ -1,5 +1,6 @@
 import pandas as pd
 import torch
+import networkx as nx
 from torch_geometric.data import Data
 
 def load_swow_en18(csv_path, strength_col='R123.Strength', min_strength=0.0):
@@ -29,12 +30,9 @@ def load_swow_en18(csv_path, strength_col='R123.Strength', min_strength=0.0):
 
     data = Data(x=x, edge_index=edge_index, edge_weight=edge_weight)
 
-    # If you still want a NetworkX graph:
-    # (But note: building this will be slower no matter what)
-    # import networkx as nx
-    # G = nx.from_pandas_edgelist(df, 'cue', 'response', edge_attr=strength_col, create_using=nx.DiGraph)
+    G = nx.from_pandas_edgelist(df, 'cue', 'response', edge_attr=strength_col, create_using=nx.DiGraph)
 
-    return data, None, word2idx.to_dict(), idx2word
+    return data, G, word2idx.to_dict(), idx2word
 
 
 # Example usage
