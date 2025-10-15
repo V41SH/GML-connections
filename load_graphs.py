@@ -1,30 +1,31 @@
 import pandas as pd
 import torch
+import numpy as np
 import networkx as nx
 from torch_geometric.data import Data
 
 
-def load_swow_en18(csv_path, strength_col='R123.Strength', min_strength=0.0):
+def load_swow_en18(csv_path, strength_col="R123.Strength", min_strength=0.0):
     """
     Load SWOW-EN18 data as a PyTorch Geometric graph quickly.
     """
     # Load only needed columns, using efficient dtypes
-    df = pd.read_csv(csv_path, sep="\t", usecols=['cue', 'response', strength_col])
+    df = pd.read_csv(csv_path, sep="\t", usecols=["cue", "response", strength_col])
     df = df[df[strength_col] >= min_strength]
 
     # Map words to integer IDs (vectorized)
-    all_words = pd.Index(df['cue']).append(pd.Index(df['response'])).unique()
- 
+    all_words = pd.Index(df["cue"]).append(pd.Index(df["response"])).unique()
+
     # get embeddings for all words. costly, but whatever.
     # all_embeddings = all_words.map(ft.get_word_vector)
- 
+
     word2idx = pd.Series(range(len(all_words)), index=all_words)
     idx2word = dict(enumerate(all_words))
 
     # Build edge indices using vectorized mapping
-    src = df['cue'].map(word2idx).to_numpy()
-    dst = df['response'].map(word2idx).to_numpy()
-    edge_index = torch.tensor([src, dst], dtype=torch.long)
+    src = df["cue"].map(word2idx).to_numpy()
+    dst = df["response"].map(word2idx).to_numpy()
+    edge_index = torch.tensor(np.array([src, dst]), dtype=torch.long)
 
     # Edge weights
     edge_weight = torch.tensor(df[strength_col].to_numpy(), dtype=torch.float)
@@ -35,7 +36,9 @@ def load_swow_en18(csv_path, strength_col='R123.Strength', min_strength=0.0):
 
     data = Data(x=x, edge_index=edge_index, edge_weight=edge_weight)
 
-    G = nx.from_pandas_edgelist(df, 'cue', 'response', edge_attr=strength_col, create_using=nx.DiGraph)
+    G = nx.from_pandas_edgelist(
+        df, "cue", "response", edge_attr=strength_col, create_using=nx.DiGraph
+    )
 
     return data, G, word2idx.to_dict(), idx2word
 

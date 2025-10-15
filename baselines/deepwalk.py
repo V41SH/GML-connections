@@ -199,12 +199,10 @@ def find_similar(embedding, word, word2idx, idx2word, top_k=10):
 
 def test_with_connections():
     """Example usage with specific connections game"""
-    # Configuration
     CSV_FILE = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
     MIN_STRENGTH = 0.05
     DIMENSIONS = 64
 
-    # Train model
     embedding, word2idx, idx2word, model = train_node2vec(
         CSV_FILE,
         min_strength=MIN_STRENGTH,
