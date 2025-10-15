@@ -1,62 +1,47 @@
-import fasttext.util
+from sentence_transformers import SentenceTransformer
 import pandas as pd
-import torch
-import networkx as nx
-from torch_geometric.data import Data
 import pickle
 
-def get_embeddings():
 
-    fasttext.util.download_model('en', if_exists='ignore')  # English
-    ft = fasttext.load_model('cc.en.300.bin')
+def get_embeddings():
+    model = SentenceTransformer("all-MiniLM-L6-v2")
 
     csv_file = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
     # Load only needed columns, using efficient dtypes
     # df = pd.read_csv(csv_file, sep="\t", usecols=['cue', 'response'])
-    min_strength=0.05
-    strength_col='R123.Strength'
-    df = pd.read_csv(csv_file, sep="\t", usecols=['cue', 'response', strength_col])
+    min_strength = 0.05
+    strength_col = "R123.Strength"
+    df = pd.read_csv(csv_file, sep="\t", usecols=["cue", "response", strength_col])
 
     df = df[df[strength_col] >= min_strength]
 
-
     # Map words to integer IDs (vectorized)
-    all_words = pd.Index(df['cue']).append(pd.Index(df['response'])).unique()
+    all_words = pd.Index(df["cue"]).append(pd.Index(df["response"])).unique()
 
     word2idx = pd.Series(range(len(all_words)), index=all_words)
-    idx2word = dict(enumerate(all_words))
 
-    # print(df.head())
-    # just_words = set(df['cue']).union(set(df["response"]))
-    just_words_actual = set(df['cue'].dropna()).union(set(df["response"].dropna()))
-    # print("Length of just words:", len(just_words))
-    # print("Length of just words actual:", len(just_words_actual))
-
+    # Get unique words from the dataset
+    just_words_actual = set(df["cue"].dropna()).union(set(df["response"].dropna()))
     just_words = just_words_actual
 
-    # exit()
-    # print("Obtaining embeddings...")
-    # get embeddings for all words. costly, but whatever.
-    # all_embeddings = all_words.map(ft.get_word_vector)
+    print(f"Obtaining embeddings for {len(just_words)} words...")
+
+    words_list = list(just_words)
+    word_embeddings = model.encode(words_list, show_progress_bar=True)
 
     embeddings = {}
+    for i, word in enumerate(words_list):
+        if word in word2idx:
+            embeddings[word2idx[word]] = word_embeddings[i]
 
-    for word in just_words:
-        try:
-            embeddings[word2idx[word]] = ft.get_word_vector(word)
-        
-        except:
-            print(f"failed with `word` {word}")
-            raise Exception
-        
-        # print(".", end="")
-    print("")
+    print(f"Generated embeddings for {len(embeddings)} words")
 
-    with open('embeddings.pickle', 'wb') as handle:
+    with open("embeddings.pickle", "wb") as handle:
         pickle.dump(embeddings, handle)
 
     # print("saved it bruv")
     # print(all_embeddings)
+
 
 if __name__ == "__main__":
     get_embeddings()
