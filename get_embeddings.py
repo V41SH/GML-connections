@@ -10,7 +10,13 @@ ft = fasttext.load_model('cc.en.300.bin')
 
 csv_file = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
 # Load only needed columns, using efficient dtypes
-df = pd.read_csv(csv_file, sep="\t", usecols=['cue', 'response'])
+# df = pd.read_csv(csv_file, sep="\t", usecols=['cue', 'response'])
+min_strength=0.05
+strength_col='R123.Strength'
+df = pd.read_csv(csv_file, sep="\t", usecols=['cue', 'response', strength_col])
+
+df = df[df[strength_col] >= min_strength]
+
 
 # Map words to integer IDs (vectorized)
 all_words = pd.Index(df['cue']).append(pd.Index(df['response'])).unique()

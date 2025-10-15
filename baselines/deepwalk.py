@@ -16,6 +16,7 @@ from load_connections import load_connections_game
 
 
 import fasttext
+import fasttext.util
 fasttext.util.download_model('en', if_exists='ignore')  # English
 ft = fasttext.load_model('cc.en.300.bin')
 with open('embeddings.pickle', 'rb') as handle:
@@ -221,12 +222,12 @@ def test_with_connections():
         current_embedding = ft.get_word_vector(nonword)
         
         # f*ck it do it myself
-        closest_embedding = embeddings_fasttext.items()[0][1]
-        closest_embedding_index = embeddings_fasttext.items()[0][0]
+        myitem = next(iter(embeddings_fasttext.items()))
+        closest_embedding = myitem[1]
+        closest_embedding_index = myitem[0]
         closest_distance = np.linalg.norm(closest_embedding - current_embedding)
 
-
-        for idx, ft_embedding in embeddings_fasttext.items()[1:]:
+        for idx, ft_embedding in embeddings_fasttext.items():
             dist = np.linalg.norm(ft_embedding - current_embedding)
             if dist < closest_distance:
                 closest_distance = dist
@@ -235,8 +236,6 @@ def test_with_connections():
 
         valid_indices.append(closest_embedding_index)
         print(f"Unseen word {nonword} replaced by {idx2word[closest_embedding_index]}")
-
-
 
     valid_embeddings = embedding[valid_indices]
     
