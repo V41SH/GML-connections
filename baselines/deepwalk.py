@@ -15,6 +15,13 @@ from load_graphs import load_swow_en18
 from load_connections import load_connections_game
 
 
+import fasttext
+fasttext.util.download_model('en', if_exists='ignore')  # English
+ft = fasttext.load_model('cc.en.300.bin')
+with open('embeddings.pickle', 'rb') as handle:
+   embeddings_fasttext = pickle.load(handle)
+
+
 def train_node2vec(
     csv_path,
     min_strength=0.05,
@@ -208,14 +215,29 @@ def test_with_connections():
     
     # Get embeddings for valid words
     valid_words = [w.lower() for w in words if w.lower() in word2idx]
+    valid_indices = [word2idx[w] for w in valid_words]
     
     for nonword in set(words) - set(valid_words):
-        pass
-    
-    
-    
-    
-    valid_indices = [word2idx[w] for w in valid_words]
+        current_embedding = ft.get_word_vector(nonword)
+        
+        # f*ck it do it myself
+        closest_embedding = embeddings_fasttext.items()[0][1]
+        closest_embedding_index = embeddings_fasttext.items()[0][0]
+        closest_distance = np.linalg.norm(closest_embedding - current_embedding)
+
+
+        for idx, ft_embedding in embeddings_fasttext.items()[1:]:
+            dist = np.linalg.norm(ft_embedding - current_embedding)
+            if dist < closest_distance:
+                closest_distance = dist
+                closest_embedding = ft_embedding
+                closest_embedding_index = idx
+
+        valid_indices.append(closest_embedding_index)
+        print(f"Unseen word {nonword} replaced by {idx2word[closest_embedding_index]}")
+
+
+
     valid_embeddings = embedding[valid_indices]
     
     # Calculate pairwise similarities
