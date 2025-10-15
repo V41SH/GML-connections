@@ -11,4 +11,7 @@ dependencies = [
     "torch-geometric>=2.6.1",
     "torch>=2.8.0",
     "pandas>=2.3.3",
+    "numpy>=1.26.4",
+    "scipy>=1.13.1",
+    "sentence-transformers>=5.1.1",
 ]
