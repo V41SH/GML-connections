@@ -121,23 +121,25 @@ def train_node2vec(
     return embedding, word2idx, idx2word, idx2embedding, model
 
 
-def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings", groups=None):
+# def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings", groups=None):
+def plot_embeddings(embedding, indices, valid_words, title="Word Embeddings", groups=None):
     """Plot word embeddings in 2D using PCA."""
     # Filter valid words
-    print("words:")
-    print(words)
+    # print("words:")
+    # print(words)
     # TODO remove
     # normalise words to get more matches
-    for i, word in enumerate(words):
-        words[i] = word.lower()
-    indices = [word2idx[w] for w in words if w in word2idx]
-    valid_words = [w for w in words if w in word2idx]
-    print("valid_words:")
-    print(valid_words)
+    # for i, word in enumerate(words):
+    #     words[i] = word.lower()
 
-    if not valid_words:
-        print("No valid words found!")
-        return
+    # indices = [word2idx[w] for w in words if w in word2idx]
+    # valid_words = [w for w in words if w in word2idx]
+    # print("valid_words:")
+    # print(valid_words)
+
+    # if not valid_words:
+    #     print("No valid words found!")
+    #     return
 
     # Apply PCA
     pca_result = PCA(n_components=2).fit_transform(embedding[indices])
@@ -221,11 +223,19 @@ def test_with_connections():
     words = connections_data["all_words"]
     
     # Get embeddings for valid words
-    valid_words = [w.lower() for w in words if w.lower() in word2idx]
-    valid_indices = [word2idx[w] for w in valid_words]
+    # valid_words = [w.lower() for w in words if w.lower() in word2idx]
+    valid_words = []
+    # valid_indices = [word2idx[w] for w in valid_words]
+    valid_indices = []
     
-    for nonword in set(words) - set(valid_words):
-        current_embedding = ft.get_word_vector(nonword)
+    for word in words:
+        word = word.lower()
+        if word in word2idx:
+            valid_words.append(word)
+            valid_indices.append(word2idx[word])
+            continue
+
+        current_embedding = ft.get_word_vector(word)
         
         # f*ck it do it myself
         myitem = next(iter(embeddings_fasttext.items()))
@@ -240,9 +250,14 @@ def test_with_connections():
                 closest_embedding = ft_embedding
                 closest_embedding_index = idx
 
+        prev_word = word
+        word = idx2word[closest_embedding_index]
+        print(f"Unseen word {prev_word} replaced by {word}")
         valid_indices.append(closest_embedding_index)
-        print(f"Unseen word {nonword} replaced by {idx2word[closest_embedding_index]}")
+        valid_words.append(word)
 
+
+    # put all words back
     valid_embeddings = embedding[valid_indices]
     
     # Calculate pairwise similarities
@@ -297,7 +312,7 @@ def test_with_connections():
         available_indices -= set(best_group)
     
     # Plot with the automatically generated groups
-    plot_embeddings(embedding, words, word2idx, idx2word, 
+    plot_embeddings(embedding, valid_indices, valid_words=valid_words, 
                    title="Connections Game 870 (Auto-Grouped)", 
                    groups=groups)
     
