@@ -14,4 +14,9 @@ dependencies = [
     "numpy>=1.26.4",
     "scipy>=1.13.1",
     "sentence-transformers>=5.1.1",
+    "pyg-lib>=0.5.0",
+    "tqdm",
 ]
+
+[tool.uv.pip]
+find-links = ["https://data.pyg.org/whl/torch-2.8.0+cu128.html"]
