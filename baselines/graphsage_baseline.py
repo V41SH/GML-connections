@@ -353,7 +353,7 @@ def main():
     EMBEDDING_DIM = 128
     HIDDEN_DIM = 256
     PROJECTION_DIM = 64
-    NUM_EPOCHS = 20
+    NUM_EPOCHS = 100
 
     # Create directories
     os.makedirs("models", exist_ok=True)
