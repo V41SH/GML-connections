@@ -3,6 +3,8 @@ import pandas as pd
 import torch
 import networkx as nx
 from torch_geometric.data import Data
+import pickle
+
 fasttext.util.download_model('en', if_exists='ignore')  # English
 ft = fasttext.load_model('cc.en.300.bin')
 
@@ -13,7 +15,37 @@ df = pd.read_csv(csv_file, sep="\t", usecols=['cue', 'response'])
 # Map words to integer IDs (vectorized)
 all_words = pd.Index(df['cue']).append(pd.Index(df['response'])).unique()
 
-# get embeddings for all words. costly, but whatever.
-all_embeddings = all_words.map(ft.get_word_vector)
+word2idx = pd.Series(range(len(all_words)), index=all_words)
+idx2word = dict(enumerate(all_words))
 
-print(all_embeddings)
+# print(df.head())
+# just_words = set(df['cue']).union(set(df["response"]))
+just_words_actual = set(df['cue'].dropna()).union(set(df["response"].dropna()))
+# print("Length of just words:", len(just_words))
+# print("Length of just words actual:", len(just_words_actual))
+
+just_words = just_words_actual
+
+# exit()
+# print("Obtaining embeddings...")
+# get embeddings for all words. costly, but whatever.
+# all_embeddings = all_words.map(ft.get_word_vector)
+
+embeddings = {}
+
+for word in just_words:
+    try:
+        embeddings[word2idx[word]] = ft.get_word_vector(word)
+    
+    except:
+        print(f"failed with `word` {word}")
+        raise Exception
+    
+    # print(".", end="")
+print("")
+
+with open('embeddings.pickle', 'wb') as handle:
+    pickle.dump(embeddings, handle)
+
+print("saved it bruv")
+# print(all_embeddings)
