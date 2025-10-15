@@ -15,6 +15,20 @@ from load_graphs import load_swow_en18
 from load_connections import load_connections_game
 
 
+import fasttext
+import fasttext.util
+fasttext.util.download_model('en', if_exists='ignore')  # English
+ft = fasttext.load_model('cc.en.300.bin')
+
+from get_embeddings import get_embeddings
+
+if not os.path.exists("embeddings.pickle"):
+    get_embeddings()
+
+with open('embeddings.pickle', 'rb') as handle:
+   embeddings_fasttext = pickle.load(handle)
+
+
 def train_node2vec(
     csv_path,
     min_strength=0.05,
@@ -64,7 +78,7 @@ def train_node2vec(
         )
 
     # Load data
-    _, G_directed, word2idx, idx2word = load_swow_en18(
+    _, G_directed, word2idx, idx2word, idx2embedding = load_swow_en18(
         csv_path, min_strength=min_strength
     )
     print(f"Loaded: {len(G_directed.nodes())} nodes, {len(G_directed.edges())} edges")
@@ -104,7 +118,7 @@ def train_node2vec(
         )
     print("Model saved successfully!")
 
-    return embedding, word2idx, idx2word, model
+    return embedding, word2idx, idx2word, idx2embedding, model
 
 
 def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings", groups=None):
@@ -209,6 +223,26 @@ def test_with_connections():
     # Get embeddings for valid words
     valid_words = [w.lower() for w in words if w.lower() in word2idx]
     valid_indices = [word2idx[w] for w in valid_words]
+    
+    for nonword in set(words) - set(valid_words):
+        current_embedding = ft.get_word_vector(nonword)
+        
+        # f*ck it do it myself
+        myitem = next(iter(embeddings_fasttext.items()))
+        closest_embedding = myitem[1]
+        closest_embedding_index = myitem[0]
+        closest_distance = np.linalg.norm(closest_embedding - current_embedding)
+
+        for idx, ft_embedding in embeddings_fasttext.items():
+            dist = np.linalg.norm(ft_embedding - current_embedding)
+            if dist < closest_distance:
+                closest_distance = dist
+                closest_embedding = ft_embedding
+                closest_embedding_index = idx
+
+        valid_indices.append(closest_embedding_index)
+        print(f"Unseen word {nonword} replaced by {idx2word[closest_embedding_index]}")
+
     valid_embeddings = embedding[valid_indices]
     
     # Calculate pairwise similarities
