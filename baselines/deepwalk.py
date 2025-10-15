@@ -19,6 +19,12 @@ import fasttext
 import fasttext.util
 fasttext.util.download_model('en', if_exists='ignore')  # English
 ft = fasttext.load_model('cc.en.300.bin')
+
+from get_embeddings import get_embeddings
+
+if not os.path.exists("embeddings.pickle"):
+    get_embeddings()
+
 with open('embeddings.pickle', 'rb') as handle:
    embeddings_fasttext = pickle.load(handle)
 
