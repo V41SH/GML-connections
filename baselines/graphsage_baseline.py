@@ -251,11 +251,19 @@ class GraphSAGETrainer:
             else:
                 skipgram_loss = torch.tensor(0.0, device=self.device)
 
-            # Combined loss
-            loss = (
-                self.contrastive_weight * contrastive_loss
-                + (1 - self.contrastive_weight) * skipgram_loss
-            )
+            # Combined loss - ensure we always have at least one component with gradients
+            if contrastive_loss.requires_grad and skipgram_loss.requires_grad:
+                loss = (
+                    self.contrastive_weight * contrastive_loss
+                    + (1 - self.contrastive_weight) * skipgram_loss
+                )
+            elif contrastive_loss.requires_grad:
+                loss = contrastive_loss
+            elif skipgram_loss.requires_grad:
+                loss = skipgram_loss
+            else:
+                # Skip this batch if no gradients
+                continue
 
             loss.backward()
             self.optimizer.step()
@@ -345,7 +353,7 @@ def main():
     EMBEDDING_DIM = 128
     HIDDEN_DIM = 256
     PROJECTION_DIM = 64
-    NUM_EPOCHS = 50
+    NUM_EPOCHS = 20
 
     # Create directories
     os.makedirs("models", exist_ok=True)
