@@ -12,3 +12,4 @@ dependencies:
     - node2vec
     - scikit-learn
     - matplotlib
+    - fasttext

@@ -254,7 +254,7 @@ def test_with_connections():
         word = idx2word[closest_embedding_index]
         print(f"Unseen word {prev_word} replaced by {word}")
         valid_indices.append(closest_embedding_index)
-        valid_words.append(word)
+        valid_words.append(prev_word)
 
 
     # put all words back
