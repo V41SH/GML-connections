@@ -1,0 +1,13 @@
+check graph statistics of resulting SWOW dataset graph; how sparse is it?
+explain design choices mathematically in the report: cosine pairwise similarity, with 
+choose hard negative examples wisely
+dont have to choose long random walks? can 
+can be our contribution by building a new dataset; but contribution should have a reason behind it. Then build new aggregator functions
+DINE: how much is this particular dimension responsible alone for generating this embedding? looks at contribution of THIS dimension, compared to whatever is in the rest. approximate way. it can help us see which dimension helps, grouping which dimensions together. > this allows us to perhaps make sure that al lour dimensions are orthogonal to eachother? i.e. each has a unique contribution?
+for proper nouns: just use [0 0 0 0] for deepwalk embeddings, and stack with BERT embeddings. we can use same approach as for the general missing words in SWOW; use SBERT similarity or wikipedia API and find similarities
+use undirected graph. directionality in SWOW is not very useful
+can notes be on paper? t.b.d.
+DINE probably into both baseline and advanced and novel methods; should not be much work and can provide nice insights. 
+make sure to reflect on the second challenge.
+multi-relations 
+include DINE loss to train on too, make sure we optimize for interpretability on-model.
