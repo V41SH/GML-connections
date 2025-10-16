@@ -117,7 +117,7 @@ class GraphSAGETrainer:
                 # Random walk
                 for _ in range(walk_length - 1):
                     # Get neighbors
-                    neighbors = self.data.index[1][
+                    neighbors = self.data.edge_index[1][
                         self.data.edge_index[0] == current_node
                     ]
                     if len(neighbors) > 0:
@@ -352,8 +352,8 @@ def main():
     # Configuration
     CSV_FILE = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
     MIN_STRENGTH = 0.05
-    PHONETIC_THRESHOLD = 0.8  # New parameter for phonetic similarity
-    USE_PHONETIC_ENHANCEMENT = True  # Flag to enable/disable phonetic features
+    PHONETIC_THRESHOLD = 0.4
+    USE_PHONETIC_ENHANCEMENT = True
     EMBEDDING_DIM = 128
     HIDDEN_DIM = 256
     PROJECTION_DIM = 64
@@ -476,7 +476,7 @@ def main():
             if USE_PHONETIC_ENHANCEMENT and "phonetic_stats" in locals():
                 model_data["phonetic_stats"] = phonetic_stats
 
-            torch.save(model_data, "models/graphsage_best.pth")
+            torch.save(model_data, "models/graphsage_phonetic_best.pth")
 
     # Test on connections game
     print("\n=== Testing on Connections Game ===")
