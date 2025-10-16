@@ -27,7 +27,7 @@ except ImportError:
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from load_graphs import load_swow_en18
+from load_graphs import load_swow_en18, load_swow_with_phonetics
 from load_connections import load_connections_game
 from get_embeddings import get_embeddings
 from models.graphsage_baseline_model import (
@@ -117,7 +117,7 @@ class GraphSAGETrainer:
                 # Random walk
                 for _ in range(walk_length - 1):
                     # Get neighbors
-                    neighbors = self.data.edge_index[1][
+                    neighbors = self.data.index[1][
                         self.data.edge_index[0] == current_node
                     ]
                     if len(neighbors) > 0:
@@ -352,6 +352,8 @@ def main():
     # Configuration
     CSV_FILE = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
     MIN_STRENGTH = 0.05
+    PHONETIC_THRESHOLD = 0.8  # New parameter for phonetic similarity
+    USE_PHONETIC_ENHANCEMENT = True  # Flag to enable/disable phonetic features
     EMBEDDING_DIM = 128
     HIDDEN_DIM = 256
     PROJECTION_DIM = 64
@@ -361,12 +363,27 @@ def main():
     os.makedirs("models", exist_ok=True)
     os.makedirs("plots", exist_ok=True)
 
-    # Load data
-    print("Loading SWOW data...")
-    data, _, word2idx, idx2word = load_swow_en18(CSV_FILE, min_strength=MIN_STRENGTH)
-    print(f"Loaded: {len(word2idx)} nodes, {data.edge_index.shape[1]} edges")
+    # Load data with phonetic enhancement
+    print("Loading SWOW data with phonetic enhancement...")
+    if USE_PHONETIC_ENHANCEMENT:
+        data, _, word2idx, idx2word, phonetic_stats = load_swow_with_phonetics(
+            CSV_FILE,
+            min_strength=MIN_STRENGTH,
+            phonetic_threshold=PHONETIC_THRESHOLD,
+            include_original_features=False,  # Don't include identity matrix
+        )
+        print(
+            f"Loaded enhanced graph: {len(word2idx)} nodes, {data.edge_index.shape[1]} edges"
+        )
+        print(f"Phonetic statistics: {phonetic_stats}")
+    else:
+        # Fall back to original loader
+        data, _, word2idx, idx2word = load_swow_en18(
+            CSV_FILE, min_strength=MIN_STRENGTH
+        )
+        print(f"Loaded: {len(word2idx)} nodes, {data.edge_index.shape[1]} edges")
 
-    # Load pretrained embeddings as node features
+    # Load and combine pretrained embeddings with phonetic features
     print("Loading pretrained embeddings...")
     if not os.path.exists("models/embeddings.pickle"):
         get_embeddings()
@@ -374,9 +391,22 @@ def main():
     pretrained_embeddings = load_pretrained_embeddings(
         "models/embeddings.pickle", word2idx
     )
-    data.x = pretrained_embeddings
 
-    print(f"Node features shape: {data.x.shape}")
+    if USE_PHONETIC_ENHANCEMENT:
+        # Combine pretrained embeddings with phonetic features
+        print("Combining pretrained embeddings with phonetic features...")
+        combined_features = torch.cat([pretrained_embeddings, data.x], dim=1)
+        data.x = combined_features
+    else:
+        data.x = pretrained_embeddings
+
+    print(f"Final node features shape: {data.x.shape}")
+
+    # Add edge type information to data for potential future use
+    if hasattr(data, "edge_type"):
+        print(
+            f"Edge types: {torch.bincount(data.edge_type)}"
+        )  # Count of each edge type
 
     # Initialize model
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -425,21 +455,28 @@ def main():
         # Save best model
         if metrics["total_loss"] < best_loss:
             best_loss = metrics["total_loss"]
-            torch.save(
-                {
-                    "model_state_dict": model.state_dict(),
-                    "word2idx": word2idx,
-                    "idx2word": idx2word,
-                    "config": {
-                        "vocab_size": len(word2idx),
-                        "input_dim": data.x.shape[1],
-                        "hidden_dim": HIDDEN_DIM,
-                        "embedding_dim": EMBEDDING_DIM,
-                        "projection_dim": PROJECTION_DIM,
-                    },
+            model_data = {
+                "model_state_dict": model.state_dict(),
+                "word2idx": word2idx,
+                "idx2word": idx2word,
+                "config": {
+                    "vocab_size": len(word2idx),
+                    "input_dim": data.x.shape[1],
+                    "hidden_dim": HIDDEN_DIM,
+                    "embedding_dim": EMBEDDING_DIM,
+                    "projection_dim": PROJECTION_DIM,
                 },
-                "models/graphsage_best.pth",
-            )
+                "use_phonetic_enhancement": USE_PHONETIC_ENHANCEMENT,
+                "phonetic_threshold": PHONETIC_THRESHOLD
+                if USE_PHONETIC_ENHANCEMENT
+                else None,
+            }
+
+            # Add phonetic statistics if available
+            if USE_PHONETIC_ENHANCEMENT and "phonetic_stats" in locals():
+                model_data["phonetic_stats"] = phonetic_stats
+
+            torch.save(model_data, "models/graphsage_best.pth")
 
     # Test on connections game
     print("\n=== Testing on Connections Game ===")
@@ -449,11 +486,38 @@ def main():
     print("\n=== Testing Word Similarities ===")
     embeddings = trainer.get_all_embeddings()
 
-    test_words = ["happy", "sad", "dog", "cat"]
+    test_words = ["happy", "sad", "dog", "cat", "phone", "tone", "cat", "bat"]
     for word in test_words:
         if word in word2idx:
             similar = trainer.find_similar_words(word, embeddings, top_k=5)
             print(f"Similar to '{word}': {[(w, f'{s:.3f}') for w, s in similar]}")
+
+    # If using phonetic enhancement, test some phonetically similar words
+    if USE_PHONETIC_ENHANCEMENT:
+        print("\n=== Testing Phonetic Similarity Impact ===")
+        from utils import phonetic_similarity
+
+        phonetic_test_pairs = [
+            ("cat", "bat"),
+            ("phone", "tone"),
+            ("right", "write"),
+            ("see", "sea"),
+            ("flower", "flour"),
+        ]
+
+        for word1, word2 in phonetic_test_pairs:
+            if word1 in word2idx and word2 in word2idx:
+                phon_sim = phonetic_similarity(word1, word2)
+
+                # Get embeddings and compute cosine similarity
+                idx1, idx2 = word2idx[word1], word2idx[word2]
+                emb1 = embeddings[idx1].reshape(1, -1)
+                emb2 = embeddings[idx2].reshape(1, -1)
+                cos_sim = cosine_similarity(emb1, emb2)[0, 0]
+
+                print(
+                    f"'{word1}' <-> '{word2}': phonetic={phon_sim:.3f}, learned={cos_sim:.3f}"
+                )
 
     print("\nTraining completed!")
 
