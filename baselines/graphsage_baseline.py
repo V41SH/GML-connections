@@ -366,10 +366,12 @@ def main():
 
     # Load pretrained embeddings as node features
     print("Loading pretrained embeddings...")
-    if not os.path.exists("embeddings.pickle"):
+    if not os.path.exists("models/embeddings.pickle"):
         get_embeddings()
 
-    pretrained_embeddings = load_pretrained_embeddings("embeddings.pickle", word2idx)
+    pretrained_embeddings = load_pretrained_embeddings(
+        "models/embeddings.pickle", word2idx
+    )
     data.x = pretrained_embeddings
 
     print(f"Node features shape: {data.x.shape}")

@@ -19,10 +19,10 @@ from sentence_transformers import SentenceTransformer
 # Load the all-MiniLM-L6-v2 model
 st_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-if not os.path.exists("embeddings.pickle"):
+if not os.path.exists("models/embeddings.pickle"):
     get_embeddings()
 
-with open("embeddings.pickle", "rb") as handle:
+with open("models/embeddings.pickle", "rb") as handle:
     embeddings_sentence_transformers = pickle.load(handle)
 
 

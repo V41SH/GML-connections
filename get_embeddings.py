@@ -36,7 +36,7 @@ def get_embeddings():
 
     print(f"Generated embeddings for {len(embeddings)} words")
 
-    with open("embeddings.pickle", "wb") as handle:
+    with open("models/embeddings.pickle", "wb") as handle:
         pickle.dump(embeddings, handle)
 
     # print("saved it bruv")
