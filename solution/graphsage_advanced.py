@@ -1,5 +1,7 @@
 """
 GraphSAGE training script with contrastive learning for SWOW word embeddings.
+
+Copied from graphsage_baseline.py, but will be extended for use with
 """
 
 import os
