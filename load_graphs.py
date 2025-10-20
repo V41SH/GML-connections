@@ -45,7 +45,7 @@ def load_swow_en18(csv_path, strength_col="R123.Strength", min_strength=0.0):
     return data, G, word2idx.to_dict(), idx2word
 
 
-def add_phonetic_edges(words_list, word2idx, phonetic_threshold=0.7):
+def add_phonetic_edges(words_list, word2idx, phonetic_threshold):
     """
     Add phonetic similarity edges between words.
 
@@ -226,9 +226,10 @@ def load_swow_with_phonetics(
         ).t()
         combined_edge_index = torch.cat([data.edge_index, phonetic_edge_tensor], dim=1)
 
-        # Combine edge weights (normalize phonetic similarities to similar scale as SWOW)
+        # Combine edge weights (scale down phonetic weights to be much lower than SWOW)
         phonetic_weights = torch.tensor(
-            [edge[2] for edge in phonetic_edges], dtype=torch.float
+            [edge[2] * 0.1 for edge in phonetic_edges],
+            dtype=torch.float,  # Scale down by 10x
         )
         combined_edge_weight = torch.cat([data.edge_weight, phonetic_weights])
 
