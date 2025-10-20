@@ -11,6 +11,8 @@ def load_swow_en18(csv_path, strength_col='R123.Strength', min_strength=0.0):
     df = pd.read_csv(csv_path, sep="\t", usecols=['cue', 'response', strength_col])
     df = df[df[strength_col] >= min_strength]
 
+    
+    df['cue'] = df['cue'].str.lower()
     # Map words to integer IDs (vectorized)
     all_words = pd.Index(df['cue']).append(pd.Index(df['response'])).unique()
     word2idx = pd.Series(range(len(all_words)), index=all_words)
