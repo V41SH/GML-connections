@@ -12,6 +12,7 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import pickle
 from tqdm import tqdm
+from time import time
 
 # Try to import efficient neighbor sampling, fall back to simpler approach
 try:
@@ -534,8 +535,10 @@ def train_graphsage_with_phonetics(
         contrastive_weight=0.7,
     )
 
-    # Training loop
+    # main Training loop
     print("\nStarting training...")
+    t1 = time()
+
     best_loss = float("inf")
 
     for epoch in range(NUM_EPOCHS):
@@ -573,6 +576,9 @@ def train_graphsage_with_phonetics(
                 model_data["phonetic_stats"] = phonetic_stats
 
             torch.save(model_data, "models/graphsage_phonetic_best.pth")
+
+    t3 = time()
+    print(f"\nTraining finished in {(t3 - t1) / 60:.2f} minutes.")
     return trainer
 
 
