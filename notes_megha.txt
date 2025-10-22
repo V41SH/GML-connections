@@ -1,4 +1,4 @@
-check graph statistics of resulting SWOW dataset graph; how sparse is it?
+check graph statistics of resulting SWOW dataset graph; how sparse is it? how many words 
 explain design choices mathematically in the report: cosine pairwise similarity, with 
 choose hard negative examples wisely
 dont have to choose long random walks? can 
@@ -11,3 +11,10 @@ DINE probably into both baseline and advanced and novel methods; should not be m
 make sure to reflect on the second challenge.
 multi-relations 
 include DINE loss to train on too, make sure we optimize for interpretability on-model.
+
+
+
+issues:
+- create graph properties function: connectedness (/isolation and sparsity), check phrases vs. words (i.e. how many words have spaces in there), some graph metrics like bipartiteness; 
+- create edge feature: etymology
+- create edge feature: 
