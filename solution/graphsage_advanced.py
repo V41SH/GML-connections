@@ -1,5 +1,7 @@
 """
 GraphSAGE training script with contrastive learning for SWOW word embeddings.
+
+Copied from graphsage_baseline.py, but will be extended for use with
 """
 
 import os
@@ -10,6 +12,7 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import pickle
 from tqdm import tqdm
+from time import time
 
 # Try to import efficient neighbor sampling, fall back to simpler approach
 try:
@@ -25,7 +28,7 @@ except ImportError:
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from load_graphs import load_swow_en18
+from load_graphs import load_swow_en18, load_swow_with_phonetics
 from load_connections import load_connections_game
 from get_embeddings import get_embeddings
 from models.graphsage_baseline_model import (
@@ -34,6 +37,17 @@ from models.graphsage_baseline_model import (
     nt_xent_loss,
     skip_gram_loss,
 )
+
+
+# Configuration
+CSV_FILE = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
+MIN_STRENGTH = 0.05
+PHONETIC_THRESHOLD = 0.4
+USE_PHONETIC_ENHANCEMENT = True
+EMBEDDING_DIM = 128
+HIDDEN_DIM = 256
+PROJECTION_DIM = 64
+NUM_EPOCHS = 50  # Increased for better training
 
 
 class GraphSAGETrainer:
@@ -302,21 +316,57 @@ class GraphSAGETrainer:
 
         return [(self.idx2word[i], similarities[i]) for i in top_indices]
 
+    def handle_missing_words(
+        self, words: list, st_model, embeddings_sentence_transformers: dict
+    ):
+        """Handle words not in SWOW vocabulary using pretrained embeddings similarity."""
+        assert embeddings_sentence_transformers, "Precomputed embeddings required"
+        assert st_model is not None, "SentenceTransformer model required"
 
-def load_pretrained_embeddings(embeddings_path: str, word2idx: dict) -> torch.Tensor:
-    """Load pretrained embeddings (e.g., from sentence transformers)."""
-    with open(embeddings_path, "rb") as f:
-        embeddings_dict = pickle.load(f)
+        # Follow deepwalk.py approach exactly
+        valid_words = [w.lower() for w in words if w.lower() in self.word2idx]
+        valid_indices = [self.word2idx[w] for w in valid_words]
 
-    # Create embedding matrix
-    embedding_dim = next(iter(embeddings_dict.values())).shape[0]
-    embeddings = torch.randn(len(word2idx), embedding_dim)  # Random init
+        # Need to compare with the original words, not lowercased valid_words
+        original_valid_words = [w for w in words if w.lower() in self.word2idx]
+        missing_words = set(words) - set(original_valid_words)
 
-    for word, idx in word2idx.items():
-        if idx in embeddings_dict:
-            embeddings[idx] = torch.tensor(embeddings_dict[idx])
+        print(
+            f"Found {len(original_valid_words)} words in SWOW vocabulary: {original_valid_words}"
+        )
+        if missing_words:
+            print(
+                f"Missing {len(missing_words)} words, will map using pretrained embeddings: {sorted(missing_words)}"
+            )
 
-    return embeddings
+        for nonword in missing_words:
+            current_embedding = st_model.encode([nonword])[0]
+
+            # Find closest embedding from precomputed embeddings (like in deepwalk.py)
+            myitem = next(iter(embeddings_sentence_transformers.items()))
+            closest_embedding = myitem[1]
+            closest_embedding_index = myitem[0]
+            closest_distance = np.linalg.norm(closest_embedding - current_embedding)
+
+            for idx, st_embedding in embeddings_sentence_transformers.items():
+                dist = np.linalg.norm(st_embedding - current_embedding)
+                if dist < closest_distance:
+                    closest_distance = dist
+                    closest_embedding = st_embedding
+                    closest_embedding_index = idx
+
+            # Always add the closest match (no threshold like in deepwalk.py)
+            valid_indices.append(closest_embedding_index)
+            mapped_word = self.idx2word[closest_embedding_index]
+            print(
+                f"Unseen word '{nonword}' mapped to '{mapped_word}' (not in SWOW vocab)"
+            )
+
+        return valid_words, valid_indices
+
+
+# Pretrained embeddings are now only used for missing word handling during evaluation
+# Not as input features to the GraphSAGE model
 
 
 def test_connections_game(trainer: GraphSAGETrainer, game_id: int = 870):
@@ -325,10 +375,20 @@ def test_connections_game(trainer: GraphSAGETrainer, game_id: int = 870):
     connections_data = load_connections_game(
         "connections_data/Connections_Data.csv", game_id=game_id
     )
-    words = [w.lower() for w in connections_data["all_words"]]
+    words = connections_data["all_words"]  # Keep original case like in deepwalk.py
 
-    # Find valid words
-    valid_words = [w for w in words if w in trainer.word2idx]
+    # Load pretrained embeddings for missing word handling
+    from sentence_transformers import SentenceTransformer
+
+    st_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+    with open("models/embeddings.pickle", "rb") as f:
+        embeddings_sentence_transformers = pickle.load(f)
+
+    # Handle missing words (like in deepwalk.py)
+    valid_words, valid_indices = trainer.handle_missing_words(
+        words, st_model, embeddings_sentence_transformers
+    )
 
     if len(valid_words) < 4:
         print(f"Only {len(valid_words)} words found in vocabulary, skipping...")
@@ -347,39 +407,108 @@ def main():
     """Main training function."""
     print("=== GraphSAGE Training for SWOW Word Embeddings ===")
 
-    # Configuration
-    CSV_FILE = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
-    MIN_STRENGTH = 0.05
-    EMBEDDING_DIM = 128
-    HIDDEN_DIM = 256
-    PROJECTION_DIM = 64
-    NUM_EPOCHS = 100
-
     # Create directories
     os.makedirs("models", exist_ok=True)
     os.makedirs("plots", exist_ok=True)
 
-    # Load data
-    print("Loading SWOW data...")
-    data, _, word2idx, idx2word = load_swow_en18(CSV_FILE, min_strength=MIN_STRENGTH)
-    print(f"Loaded: {len(word2idx)} nodes, {data.edge_index.shape[1]} edges")
+    # Load data with phonetic enhancement
+    print("Loading SWOW data with phonetic enhancement...")
+    if USE_PHONETIC_ENHANCEMENT:
+        data, _, word2idx, idx2word, phonetic_stats = load_swow_with_phonetics(
+            CSV_FILE,
+            min_strength=MIN_STRENGTH,
+            phonetic_threshold=PHONETIC_THRESHOLD,
+            include_original_features=False,  # Only phonetic features, no identity matrix
+        )
+        print(
+            f"Loaded enhanced graph: {len(word2idx)} nodes, {data.edge_index.shape[1]} edges"
+        )
+        print(f"Phonetic statistics: {phonetic_stats}")
+    else:
+        # Fall back to original loader
+        data, _, word2idx, idx2word = load_swow_en18(
+            CSV_FILE, min_strength=MIN_STRENGTH
+        )
+        print(f"Loaded: {len(word2idx)} nodes, {data.edge_index.shape[1]} edges")
 
-    # Load pretrained embeddings as node features
-    print("Loading pretrained embeddings...")
+        # Initialize with random features (let GraphSAGE learn from structure)
+        data.x = torch.randn(len(word2idx), EMBEDDING_DIM)
+
+    print(f"Node features shape: {data.x.shape}")
+
+    # Load pretrained embeddings ONLY for missing word handling and evaluation
+    print("Loading pretrained embeddings for missing word handling...")
     if not os.path.exists("models/embeddings.pickle"):
         get_embeddings()
 
-    pretrained_embeddings = load_pretrained_embeddings(
-        "models/embeddings.pickle", word2idx
-    )
-    data.x = pretrained_embeddings
+    # Don't use pretrained embeddings as input features!
+    # They are only for missing word handling during evaluation
 
-    print(f"Node features shape: {data.x.shape}")
+    # Add edge type information to data for potential future use
+    if hasattr(data, "edge_type"):
+        print(
+            f"Edge types: {torch.bincount(data.edge_type)}"
+        )  # Count of each edge type
 
     # Initialize model
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
+    trainer = train_graphsage_with_phonetics(
+        data, word2idx, idx2word, phonetic_stats, device
+    )
+
+    # Test on connections game
+    print("\n=== Testing on Connections Game ===")
+    test_connections_game(trainer, game_id=870)
+
+    # Get final embeddings and test similarity
+    print("\n=== Testing Word Similarities ===")
+    embeddings = trainer.get_all_embeddings()
+
+    test_words = ["happy", "sad", "dog", "cat", "phone", "tone", "cat", "bat"]
+    for word in test_words:
+        if word in word2idx:
+            similar = trainer.find_similar_words(word, embeddings, top_k=5)
+            print(f"Similar to '{word}': {[(w, f'{s:.3f}') for w, s in similar]}")
+
+    # If using phonetic enhancement, test some phonetically similar words
+    if USE_PHONETIC_ENHANCEMENT:
+        print("\n=== Testing Phonetic Similarity Impact ===")
+        from utils import phonetic_similarity
+
+        phonetic_test_pairs = [
+            ("cat", "bat"),
+            ("phone", "tone"),
+            ("right", "write"),
+            ("see", "sea"),
+            ("flower", "flour"),
+        ]
+
+        for word1, word2 in phonetic_test_pairs:
+            if word1 in word2idx and word2 in word2idx:
+                phon_sim = phonetic_similarity(word1, word2)
+
+                # Get embeddings and compute cosine similarity
+                idx1, idx2 = word2idx[word1], word2idx[word2]
+                emb1 = embeddings[idx1].reshape(1, -1)
+                emb2 = embeddings[idx2].reshape(1, -1)
+                cos_sim = cosine_similarity(emb1, emb2)[0, 0]
+
+                print(
+                    f"'{word1}' <-> '{word2}': phonetic={phon_sim:.3f}, learned={cos_sim:.3f}"
+                )
+
+    print("\nTraining completed!")
+
+
+def train_graphsage_with_phonetics(
+    data,
+    word2idx,
+    idx2word,
+    phonetic_stats,
+    device,
+):
     model = GraphSAGEContrastive(
         vocab_size=len(word2idx),
         input_dim=data.x.shape[1],
@@ -406,8 +535,10 @@ def main():
         contrastive_weight=0.7,
     )
 
-    # Training loop
+    # main Training loop
     print("\nStarting training...")
+    t1 = time()
+
     best_loss = float("inf")
 
     for epoch in range(NUM_EPOCHS):
@@ -423,37 +554,32 @@ def main():
         # Save best model
         if metrics["total_loss"] < best_loss:
             best_loss = metrics["total_loss"]
-            torch.save(
-                {
-                    "model_state_dict": model.state_dict(),
-                    "word2idx": word2idx,
-                    "idx2word": idx2word,
-                    "config": {
-                        "vocab_size": len(word2idx),
-                        "input_dim": data.x.shape[1],
-                        "hidden_dim": HIDDEN_DIM,
-                        "embedding_dim": EMBEDDING_DIM,
-                        "projection_dim": PROJECTION_DIM,
-                    },
+            model_data = {
+                "model_state_dict": model.state_dict(),
+                "word2idx": word2idx,
+                "idx2word": idx2word,
+                "config": {
+                    "vocab_size": len(word2idx),
+                    "input_dim": data.x.shape[1],
+                    "hidden_dim": HIDDEN_DIM,
+                    "embedding_dim": EMBEDDING_DIM,
+                    "projection_dim": PROJECTION_DIM,
                 },
-                "models/graphsage_best.pth",
-            )
+                "use_phonetic_enhancement": USE_PHONETIC_ENHANCEMENT,
+                "phonetic_threshold": PHONETIC_THRESHOLD
+                if USE_PHONETIC_ENHANCEMENT
+                else None,
+            }
 
-    # Test on connections game
-    print("\n=== Testing on Connections Game ===")
-    test_connections_game(trainer, game_id=870)
+            # Add phonetic statistics if available
+            if USE_PHONETIC_ENHANCEMENT and "phonetic_stats" in locals():
+                model_data["phonetic_stats"] = phonetic_stats
 
-    # Get final embeddings and test similarity
-    print("\n=== Testing Word Similarities ===")
-    embeddings = trainer.get_all_embeddings()
+            torch.save(model_data, "models/graphsage_phonetic_best.pth")
 
-    test_words = ["happy", "sad", "dog", "cat"]
-    for word in test_words:
-        if word in word2idx:
-            similar = trainer.find_similar_words(word, embeddings, top_k=5)
-            print(f"Similar to '{word}': {[(w, f'{s:.3f}') for w, s in similar]}")
-
-    print("\nTraining completed!")
+    t3 = time()
+    print(f"\nTraining finished in {(t3 - t1) / 60:.2f} minutes.")
+    return trainer
 
 
 if __name__ == "__main__":
