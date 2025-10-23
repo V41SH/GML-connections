@@ -32,6 +32,9 @@ def compare_connections_to_swow(connections_csv, swow_csv, min_strength=0.05, ou
     print(f"Connections words: {len(connections_words)}")
     print(f"Overlap with SWOW: {len(overlap)} ({coverage:.2f}%)")
     print(f"Missing words: {len(missing)} ({len(missing)/len(connections_words)*100:.2f}%)")
+    
+    missing_path =  "data_exploration/_missing.csv"
+    pd.DataFrame(sorted(missing), columns=["missing_word"]).to_csv(missing_path, index=False)
 
     return overlap, missing
 
