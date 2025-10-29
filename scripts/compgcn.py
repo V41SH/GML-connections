@@ -42,7 +42,7 @@ class CompGCNConv(MessagePassing):
     def forward(self, x, edge_index, edge_type):
         # Add self-loops
         num_nodes = x.size(0)
-        edge_index, _ = add_self_loops(edge_index, num_edges=edge_index.size(1))
+        edge_index, _ = add_self_loops(edge_index, num_nodes=num_nodes)
         
         # Extend edge_type with self-loop relation (use relation 0 or a special one)
         self_loop_type = torch.zeros(num_nodes, dtype=torch.long, device=edge_type.device)
@@ -142,8 +142,13 @@ def main():
     # Load graph
     nodes, edge_index, edge_type, node_to_idx, relation_to_idx = load_graph_from_gml(gml_path)
     
-    # Load FastText embeddings
-    node_features = load_fasttext_embeddings(nodes, embedding_dim=300)
+    # Load FastText embeddings (use saved file if available)
+    fasttext_emb_path = os.path.join(output_dir, 'fasttext_node_embeddings.npy')
+    if os.path.exists(fasttext_emb_path):
+        print(f"Loading saved FastText embeddings from: {fasttext_emb_path}")
+        node_features = torch.from_numpy(np.load(fasttext_emb_path))
+    else:
+        node_features = load_fasttext_embeddings(nodes, embedding_dim=300)
     
     # Create PyTorch Geometric Data object
     data = Data(
