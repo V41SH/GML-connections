@@ -1,3 +1,4 @@
+import os
 import torch
 import networkx as nx
 import fasttext
@@ -55,5 +56,10 @@ def load_fasttext_embeddings(nodes, embedding_dim=300):
     
     embeddings = np.array(embeddings, dtype=np.float32)
     print(f"Loaded embeddings with shape: {embeddings.shape}")
-    
+
+    # Save embeddings to file
+    out_path = os.path.join(os.path.dirname(__file__), '../graphs/fasttext_node_embeddings.npy')
+    np.save(out_path, embeddings)
+    print(f"Embeddings saved to: {out_path}")
+
     return torch.from_numpy(embeddings)
