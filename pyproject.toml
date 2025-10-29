@@ -12,4 +12,5 @@ dependencies = [
     "torch>=2.8.0",
     "pandas>=2.3.3",
     "fasttext>=0.9.3",
+    "tqdm>=4.67.1",
 ]
