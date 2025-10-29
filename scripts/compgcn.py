@@ -146,7 +146,20 @@ def main():
     fasttext_emb_path = os.path.join(output_dir, 'fasttext_node_embeddings.npy')
     if os.path.exists(fasttext_emb_path):
         print(f"Loading saved FastText embeddings from: {fasttext_emb_path}")
-        node_features = torch.from_numpy(np.load(fasttext_emb_path))
+        try:
+            loaded_emb = np.load(fasttext_emb_path)
+            # Verify shape matches current graph
+            if loaded_emb.shape[0] == len(nodes):
+                node_features = torch.from_numpy(loaded_emb)
+                print(f"Successfully loaded embeddings with shape: {loaded_emb.shape}")
+            else:
+                print(f"Shape mismatch: saved={loaded_emb.shape[0]} nodes, current={len(nodes)} nodes")
+                print("Regenerating embeddings...")
+                node_features = load_fasttext_embeddings(nodes, embedding_dim=300)
+        except Exception as e:
+            print(f"Error loading embeddings: {e}")
+            print("Regenerating embeddings...")
+            node_features = load_fasttext_embeddings(nodes, embedding_dim=300)
     else:
         node_features = load_fasttext_embeddings(nodes, embedding_dim=300)
     
