@@ -1,3 +1,5 @@
+
+import os
 import pandas as pd
 import torch
 from torch_geometric.data import Data
@@ -58,6 +60,13 @@ def load_conceptnet_graph(csv_path: str):
         edge_attr=['weight', 'relation'],
         create_using=nx.DiGraph
     )
+    
+    # Save the NetworkX graph to 'graphs' directory
+    graphs_dir = os.path.join(os.path.dirname(__file__), 'graphs')
+    os.makedirs(graphs_dir, exist_ok=True)
+    graph_save_path = os.path.join(graphs_dir, 'conceptnet_graph.gml')
+    nx.write_gml(G, graph_save_path)
+    print(f"Graph saved to: {graph_save_path}")
 
     print(f"Loaded graph with {len(all_words):,} nodes, {len(df):,} edges, {len(relation_types)} relation types")
     return data, G, word2idx.to_dict(), idx2word, rel2idx.to_dict()
