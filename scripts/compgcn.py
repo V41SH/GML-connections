@@ -8,6 +8,7 @@ from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import add_self_loops
 from utils import load_graph_from_gml, load_fasttext_embeddings
 from tqdm import tqdm
+from time import time
 
 
 class CompGCNConv(MessagePassing):
@@ -156,6 +157,7 @@ def train_compgcn(data, model, optimizer, device):
 
 
 def main():
+    t1 = time()
     # Paths
     script_dir = os.path.dirname(__file__)
     gml_path = os.path.join(script_dir, "../graphs/conceptnet_graph.gml")
@@ -170,6 +172,9 @@ def main():
     nodes, edge_index, edge_type, node_to_idx, relation_to_idx = load_graph_from_gml(
         gml_path
     )
+    t2 = time()
+
+    print(f"Graph loaded in {t2 - t1:.2f} seconds with {len(nodes):,} nodes.")
 
     # Load FastText embeddings (use saved file if available)
     fasttext_emb_path = os.path.join(output_dir, "fasttext_node_embeddings.npy")
@@ -194,6 +199,10 @@ def main():
     else:
         node_features = load_fasttext_embeddings(nodes, embedding_dim=300)
 
+    t3 = time()
+    print(
+        f"Node features prepared in {t3 - t2:.2f} seconds. Total elapsed time: {t3 - t1:.2f} seconds."
+    )
     # Create PyTorch Geometric Data object
     data = Data(x=node_features, edge_index=edge_index, edge_type=edge_type).to(device)
 
@@ -218,6 +227,11 @@ def main():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
 
+    t4 = time()
+    print(
+        f"Model initialized in {t4 - t3:.2f} seconds. Total elapsed time: {t4 - t1:.2f} seconds."
+    )
+
     # Training loop
     print("\nTraining CompGCN...")
     num_epochs = 100
@@ -228,12 +242,20 @@ def main():
         if (epoch + 1) % 10 == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss:.4f}")
 
+    t5 = time()
+    print(
+        f"Training completed in {t5 - t4:.2f} seconds. Total elapsed time: {t5 - t1:.2f} seconds."
+    )
     # Generate final embeddings
     model.eval()
     with torch.no_grad():
         embeddings = model(data.x, data.edge_index, data.edge_type)
         embeddings = embeddings.cpu().numpy()
 
+    t6 = time()
+    print(
+        f"Embeddings generated in {t6 - t5:.2f} seconds. Total elapsed time: {t6 - t1:.2f} seconds."
+    )
     # Save embeddings
     embeddings_path = os.path.join(output_dir, "compgcn_node_embeddings.npy")
     np.save(embeddings_path, embeddings)
@@ -253,7 +275,8 @@ def main():
         pickle.dump(relation_to_idx, f)
     print(f"Relation mapping saved to: {rel_mapping_path}")
 
-    print("\nTraining complete!")
+    t7 = time()
+    print(f"\nTraining complete! Total elapsed time: {t7 - t1:.2f} seconds.")
 
 
 if __name__ == "__main__":
