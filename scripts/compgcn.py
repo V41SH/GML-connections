@@ -6,9 +6,15 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import add_self_loops
-from utils import load_graph_from_gml, load_fasttext_embeddings
+from utils import (
+    load_graph_from_gml, 
+    load_fasttext_embeddings,
+    LinkPredictor,
+    train_compgcn
+)
 from tqdm import tqdm
 from time import time
+import pickle
 
 
 class CompGCNConv(MessagePassing):
@@ -135,27 +141,6 @@ class CompGCN(nn.Module):
         return x
 
 
-def train_compgcn(data, model, optimizer, device):
-    """
-    Training step for CompGCN (unsupervised).
-    Uses a simple reconstruction loss or can be adapted for specific tasks.
-    """
-    model.train()
-    optimizer.zero_grad()
-
-    # Forward pass
-    embeddings = model(data.x, data.edge_index, data.edge_type)
-
-    # Simple unsupervised loss: encourage smooth embeddings
-    # You can replace this with task-specific loss (link prediction, classification, etc.)
-    loss = F.mse_loss(embeddings, data.x[:, : embeddings.size(1)])
-
-    loss.backward()
-    optimizer.step()
-
-    return loss.item()
-
-
 def main():
     t1 = time()
     # Paths
@@ -213,8 +198,14 @@ def main():
     num_relations = len(relation_to_idx)
     num_layers = 2
     dropout = 0.3
+    
+    # Training configuration
+    loss_function = "link_prediction"  # Options: 'link_prediction', 'reconstruction'
+    num_epochs = 100
+    learning_rate = 0.01
+    weight_decay = 5e-4
 
-    # Initialize model
+    # Initialize CompGCN model
     model = CompGCN(
         in_channels=in_channels,
         hidden_channels=hidden_channels,
@@ -224,8 +215,22 @@ def main():
         dropout=dropout,
         composition="sub",
     ).to(device)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
+    
+    # Initialize LinkPredictor (decoder) if using link prediction loss
+    link_predictor = None
+    if loss_function == "link_prediction":
+        link_predictor = LinkPredictor(
+            in_channels=out_channels,
+            hidden_channels=64
+        ).to(device)
+        print("Initialized LinkPredictor for link prediction loss.")
+    
+    # Optimizer - optimize both model and link predictor parameters
+    params = list(model.parameters())
+    if link_predictor is not None:
+        params += list(link_predictor.parameters())
+    
+    optimizer = torch.optim.Adam(params, lr=learning_rate, weight_decay=weight_decay)
 
     t4 = time()
     print(
@@ -233,11 +238,10 @@ def main():
     )
 
     # Training loop
-    print("\nTraining CompGCN...")
-    num_epochs = 100
+    print(f"\nTraining CompGCN with '{loss_function}' loss...")
 
     for epoch in tqdm(range(num_epochs), desc="Training Epochs"):
-        loss = train_compgcn(data, model, optimizer, device)
+        loss = train_compgcn(data, model, link_predictor, optimizer, device, loss_fn=loss_function)
 
         if (epoch + 1) % 10 == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss:.4f}")
@@ -260,9 +264,6 @@ def main():
     embeddings_path = os.path.join(output_dir, "compgcn_node_embeddings.npy")
     np.save(embeddings_path, embeddings)
     print(f"\nNode embeddings saved to: {embeddings_path}")
-
-    # Save node to index mapping
-    import pickle
 
     mapping_path = os.path.join(output_dir, "node_to_idx.pkl")
     with open(mapping_path, "wb") as f:
