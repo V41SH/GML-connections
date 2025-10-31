@@ -11,4 +11,5 @@ dependencies = [
     "torch-geometric>=2.6.1",
     "torch>=2.8.0",
     "pandas>=2.3.3",
+    "wordninja>=2.0.0",
 ]

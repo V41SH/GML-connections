@@ -29,6 +29,8 @@ def load_connections_game(csv_path, game_id=None):
         if df.empty:
             raise ValueError(f"No puzzle found for Game ID {game_id}")
 
+    df = df.dropna(subset=["Word"])
+    df["Word"] = df["Word"].astype(str).str.strip()
     
     game_id = int(df["Game ID"].iloc[0])
     puzzle_date = str(df["Puzzle Date"].iloc[0])

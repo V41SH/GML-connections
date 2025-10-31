@@ -7,6 +7,7 @@ from torch_geometric.data import Data
 import networkx as nx
 import numpy as np
 
+from compoundEdges import add_compound_edges
 
 def load_conceptnet_graph(csv_path: str):
     """
@@ -21,6 +22,15 @@ def load_conceptnet_graph(csv_path: str):
     df['end_word'] = df['end_word'].astype(str).str.lower()
     df['relation'] = df['relation'].astype(str).str.lower()
 
+    existing_vocab = set(df['start_word'].unique()) | set (df['end_word'].unique())
+    df = add_compound_edges(
+        df,
+        word2idx=None,
+        existing_vocab=existing_vocab,
+        compound_weight=0.5,
+        compound_relation="compound_subword"
+    )
+    
     # Build node vocabulary
     all_words = pd.Index(df['start_word']).append(pd.Index(df['end_word'])).unique()
     word2idx = pd.Series(range(len(all_words)), index=all_words)
