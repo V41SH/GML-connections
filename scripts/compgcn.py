@@ -16,6 +16,8 @@ from tqdm import tqdm
 from time import time
 import pickle
 
+import dine
+
 
 class CompGCNConv(MessagePassing):
     """
@@ -150,7 +152,20 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     # Device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # gabriel's stupid prompt
+    if torch.cuda.is_available():
+        answer = input("WOULD YOU LIKE TO USE CUDA?[type anything but 'no']: ")
+        if answer == "no":
+            device = torch.device(device)
+        else:
+            device = torch.device("cuda")
+
+    else:
+        device = torch.device(device)
+
+    
     print(f"Using device: {device}")
 
     # Load graph
@@ -200,7 +215,7 @@ def main():
     dropout = 0.3
     
     # Training configuration
-    loss_function = "link_prediction"  # Options: 'link_prediction', 'reconstruction'
+    loss_function = "link_prediction"  # Options: 'link_prediction', 'reconstruction', 'dine
     num_epochs = 100
     learning_rate = 0.01
     weight_decay = 5e-4
@@ -224,6 +239,8 @@ def main():
             hidden_channels=64
         ).to(device)
         print("Initialized LinkPredictor for link prediction loss.")
+    elif loss_function == "dine":
+        link_predictor = dine.embedding_product
     
     # Optimizer - optimize both model and link predictor parameters
     params = list(model.parameters())

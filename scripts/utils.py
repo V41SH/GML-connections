@@ -6,6 +6,7 @@ import networkx as nx
 import fasttext
 import numpy as np
 from torch_geometric.utils import negative_sampling
+import dine
 
 def load_graph_from_gml(gml_path):
     """
@@ -110,7 +111,7 @@ def compute_link_prediction_loss(embeddings, pos_edge_index, neg_edge_index, lin
         embeddings: Node embeddings from CompGCN
         pos_edge_index: Positive (real) edges
         neg_edge_index: Negative (fake) edges
-        link_predictor: Decoder model
+        link_predictor: Decoder model / predesigned function
     
     Returns:
         loss: Binary cross-entropy loss
@@ -152,40 +153,12 @@ def compute_reconstruction_loss(embeddings, original_features):
     return loss
 
 
-def compute_orthogonality_loss(h):
-    """From https://github.com/simonepiaggesi/dine/blob/main/model.py"""
 
-    partitions = (h * h.sum(axis=0))
-    O = partitions.matmul(partitions.T)
-    I = torch.eye(O.shape[0], device=O.device)
-    loss = nn.functional.mse_loss(O/O.norm(), I/I.norm(), reduction="mean")
-
-    return loss
-
-def compute_size_loss(h, EPS=1e-15):
-    """From https://github.com/simonepiaggesi/dine/blob/main/model.py"""
-
-    mask = h.T
-    axs = torch.arange(mask.dim())        
-    mask_size = torch.sum(mask, axis=tuple(axs[1:]))
-    mask_norm = mask_size / torch.sum(mask_size, axis=0)
-    mask_ent = torch.sum(- mask_norm * torch.log(mask_norm + EPS), axis=0)
-    max_ent = torch.log(torch.tensor(mask.shape[0], dtype=torch.float32, device=mask.device))
-   
-    return max_ent - torch.mean(mask_ent)
-
-def embedding_product(embeddings, edge_index):
-    """Replaces link predictor model!"""
-    # Retrieve embeddings for source and target nodes
-    u = embeddings[edge_index[0]]
-    v = embeddings[edge_index[1]]    
-
-    # scores = torch.sum(u * v, dim=1)
-    scores = torch.dot(u,v)
-    return scores
-
-
-def train_compgcn(data, model, link_predictor, optimizer, device, loss_fn="link_prediction"):
+def train_compgcn(data, model, link_predictor, optimizer, device,
+                  loss_fn="link_prediction",
+                  ortloss_coeff=1.0,
+                  sizeloss_coeff=1.0,
+    ):
     """
     Training step for CompGCN with configurable loss function.
     
@@ -195,7 +168,7 @@ def train_compgcn(data, model, link_predictor, optimizer, device, loss_fn="link_
         link_predictor: LinkPredictor model (only used for link_prediction loss)
         optimizer: Optimizer
         device: Device (cpu or cuda)
-        loss_fn: Loss function to use. Options: 'link_prediction', 'reconstruction'
+        loss_fn: Loss function to use. Options: 'link_prediction', 'dine', 'reconstruction'
     
     Returns:
         loss: Scalar loss value
@@ -210,14 +183,15 @@ def train_compgcn(data, model, link_predictor, optimizer, device, loss_fn="link_
     embeddings = model(data.x, data.edge_index, data.edge_type)
 
     # Compute loss based on selected loss function
-    if loss_fn == "link_prediction":
+    if loss_fn == "link_prediction" or loss_fn == "dine":
+        
         # Generate negative samples
         neg_edge_index = negative_sampling(
             edge_index=data.edge_index,
             num_nodes=data.x.size(0),
             num_neg_samples=data.edge_index.size(1),  # Same number as positive edges
         )
-        
+
         # Compute link prediction loss
         loss = compute_link_prediction_loss(
             embeddings, 
@@ -225,6 +199,11 @@ def train_compgcn(data, model, link_predictor, optimizer, device, loss_fn="link_
             neg_edge_index, 
             link_predictor
         )
+
+        if loss_fn == "dine":
+            loss += ortloss_coeff * dine.compute_orthogonality_loss(embeddings)
+            loss += sizeloss_coeff * dine.compute_size_loss(embeddings)
+
     
     elif loss_fn == "reconstruction":
         # Compute reconstruction loss
