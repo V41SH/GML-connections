@@ -182,6 +182,8 @@ def train_compgcn(data, model, link_predictor, optimizer, device,
 
     # Forward pass through CompGCN
     embeddings = model(data.x, data.edge_index, data.edge_type)
+    if loss_fn == "dine":
+        embeddings = F.relu(embeddings)
 
     # Compute loss based on selected loss function
     if loss_fn == "link_prediction" or loss_fn == "dine":
