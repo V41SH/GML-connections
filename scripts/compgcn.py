@@ -156,14 +156,15 @@ def main():
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # gabriel's stupid prompt
     if torch.cuda.is_available():
-        answer = input("WOULD YOU LIKE TO USE CUDA?[type anything but 'no']: ")
+        print("!!!!")
+        answer = input("USER PROMPT: WOULD YOU LIKE TO USE CUDA?[type anything but 'no']> ")
         if answer == "no":
-            device = torch.device(device)
+            device = torch.device("cpu")
         else:
             device = torch.device("cuda")
 
     else:
-        device = torch.device(device)
+        device = torch.device("cpu")
 
     
     print(f"Using device: {device}")
@@ -215,7 +216,8 @@ def main():
     dropout = 0.3
     
     # Training configuration
-    loss_function = "link_prediction"  # Options: 'link_prediction', 'reconstruction', 'dine
+    # loss_function = "link_prediction"  # Options: 'link_prediction', 'reconstruction', 'dine
+    loss_function = "dine"  # Options: 'link_prediction', 'reconstruction', 'dine
     num_epochs = 100
     learning_rate = 0.01
     weight_decay = 5e-4
@@ -244,7 +246,8 @@ def main():
     
     # Optimizer - optimize both model and link predictor parameters
     params = list(model.parameters())
-    if link_predictor is not None:
+    # if link_predictor is not None:
+    if isinstance(link_predictor, LinkPredictor):
         params += list(link_predictor.parameters())
     
     optimizer = torch.optim.Adam(params, lr=learning_rate, weight_decay=weight_decay)

@@ -174,7 +174,8 @@ def train_compgcn(data, model, link_predictor, optimizer, device,
         loss: Scalar loss value
     """
     model.train()
-    if link_predictor is not None:
+    # if link_predictor is not None:
+    if isinstance(link_predictor, LinkPredictor):
         link_predictor.train()
     
     optimizer.zero_grad()
