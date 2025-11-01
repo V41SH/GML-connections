@@ -152,6 +152,39 @@ def compute_reconstruction_loss(embeddings, original_features):
     return loss
 
 
+def compute_orthogonality_loss(h):
+    """From https://github.com/simonepiaggesi/dine/blob/main/model.py"""
+
+    partitions = (h * h.sum(axis=0))
+    O = partitions.matmul(partitions.T)
+    I = torch.eye(O.shape[0], device=O.device)
+    loss = nn.functional.mse_loss(O/O.norm(), I/I.norm(), reduction="mean")
+
+    return loss
+
+def compute_size_loss(h, EPS=1e-15):
+    """From https://github.com/simonepiaggesi/dine/blob/main/model.py"""
+
+    mask = h.T
+    axs = torch.arange(mask.dim())        
+    mask_size = torch.sum(mask, axis=tuple(axs[1:]))
+    mask_norm = mask_size / torch.sum(mask_size, axis=0)
+    mask_ent = torch.sum(- mask_norm * torch.log(mask_norm + EPS), axis=0)
+    max_ent = torch.log(torch.tensor(mask.shape[0], dtype=torch.float32, device=mask.device))
+   
+    return max_ent - torch.mean(mask_ent)
+
+def embedding_product(embeddings, edge_index):
+    """Replaces link predictor model!"""
+    # Retrieve embeddings for source and target nodes
+    u = embeddings[edge_index[0]]
+    v = embeddings[edge_index[1]]    
+
+    # scores = torch.sum(u * v, dim=1)
+    scores = torch.dot(u,v)
+    return scores
+
+
 def train_compgcn(data, model, link_predictor, optimizer, device, loss_fn="link_prediction"):
     """
     Training step for CompGCN with configurable loss function.
