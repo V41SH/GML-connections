@@ -1,13 +1,16 @@
 import torch
 import torch.nn as nn
 
-def compute_orthogonality_loss(h):
+def compute_orthogonality_loss(h, EPS=1e-15):
     """From https://github.com/simonepiaggesi/dine/blob/main/model.py"""
 
     partitions = (h * h.sum(axis=0)).T
     O = partitions.matmul(partitions.T)
     I = torch.eye(O.shape[0], device=O.device)
-    loss = nn.functional.mse_loss(O/O.norm(), I/I.norm(), reduction="mean")
+    loss = nn.functional.mse_loss(
+        O/(O.norm() + EPS),
+        I/(I.norm() + EPS),
+        reduction="mean")
 
     return loss
 
@@ -17,7 +20,11 @@ def compute_size_loss(h, EPS=1e-15):
     mask = h.T
     axs = torch.arange(mask.dim())        
     mask_size = torch.sum(mask, axis=tuple(axs[1:]))
-    mask_norm = mask_size / torch.sum(mask_size, axis=0)
+
+    # mask_norm = mask_size / torch.sum(mask_size, axis=0)
+    mask_norm = mask_size / (torch.sum(mask_size, axis=0) + EPS)
+
+
     mask_ent = torch.sum(- mask_norm * torch.log(mask_norm + EPS), axis=0)
     max_ent = torch.log(torch.tensor(mask.shape[0], dtype=torch.float32, device=mask.device))
    
