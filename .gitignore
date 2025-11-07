@@ -213,3 +213,4 @@ __marimo__/
 .DS_Store
 
 /graphs
+/embedding_models

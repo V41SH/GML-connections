@@ -1,8 +1,6 @@
-
 import os
 import pandas as pd
 import torch
-from torch_geometric.data import Data
 from torch_geometric.data import Data
 import networkx as nx
 import numpy as np
