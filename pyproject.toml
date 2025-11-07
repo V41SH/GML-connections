@@ -13,4 +13,5 @@ dependencies = [
     "pandas>=2.3.3",
     "wordninja>=2.0.0",
     "fasttext>=0.9.3",
+    "tqdm>=4.67.1",
 ]
