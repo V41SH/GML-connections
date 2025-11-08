@@ -217,7 +217,7 @@ def main():
     
     # Training configuration
     # loss_function = "link_prediction"  # Options: 'link_prediction', 'reconstruction', 'dine', 'contrastive'
-    loss_function = "contrastive"  # <-- Set to 'contrastive'
+    loss_function = "dine_contrastive"  
     num_epochs = 100
     learning_rate = 0.01
     weight_decay = 5e-4
@@ -236,13 +236,13 @@ def main():
     
     # Initialize LinkPredictor (decoder) if using link prediction loss
     link_predictor = None
-    if loss_function == "link_prediction" or loss_function == "contrastive": # <-- Add 'contrastive'
+    if loss_function == "link_prediction" or loss_function == "contrastive": 
         link_predictor = LinkPredictor(
             in_channels=out_channels,
             hidden_channels=64
         ).to(device)
         print(f"Initialized LinkPredictor for {loss_function} loss.")
-    elif loss_function == "dine":
+    elif loss_function == "dine" or loss_function == "dine_contrastive":
         link_predictor = dine.embedding_product
         print("Using 'dine.embedding_product' as link predictor.")
     

@@ -190,7 +190,7 @@ class EmbeddingEvaluator:
 
 
 def main():
-    evaluator = EmbeddingEvaluator("graphs/compgcn/compgcn_node_embeddings.npy")
+    evaluator = EmbeddingEvaluator("graphs/compgcn_node_embeddings.npy")
     game_ids = list(range(1, 872)) 
     # game_ids = [870, 871]
     evaluator.evaluate_multiple_games(game_ids, "connections_data/Connections_Data.csv")

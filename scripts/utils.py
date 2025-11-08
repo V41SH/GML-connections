@@ -239,7 +239,7 @@ def train_compgcn(data, model, link_predictor, optimizer, device,
     embeddings = model(data.x, data.edge_index, data.edge_type)
     
     # Handle link-based losses (link prediction, DINE, contrastive)
-    if loss_fn in ["link_prediction", "dine", "contrastive"]:
+    if loss_fn in ["link_prediction", "dine", "contrastive", "dine_contrastive"]:
         # Generate negative samples
         neg_edge_index = negative_sampling(
             edge_index=data.edge_index,
