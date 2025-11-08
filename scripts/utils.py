@@ -108,50 +108,68 @@ def compute_link_prediction_loss(embeddings, pos_edge_index, neg_edge_index, lin
     Compute link prediction loss using positive and negative samples.
     
     Args:
-        embeddings: Node embeddings from CompGCN
-        pos_edge_index: Positive (real) edges
-        neg_edge_index: Negative (fake) edges
-        link_predictor: Decoder model / predesigned function
+        embeddings: Node embeddings from CompGCN [num_nodes, embedding_dim]
+        pos_edge_index: Positive (real) edges [2, num_pos_edges]
+        neg_edge_index: Negative (fake) edges [2, num_neg_edges]
+        link_predictor: Decoder model or scoring function
     
     Returns:
-        loss: Binary cross-entropy loss
+        loss: Binary cross-entropy loss (scalar)
     """
-    # Predict scores for positive edges
     pos_scores = link_predictor(embeddings, pos_edge_index)
-    
-    # Predict scores for negative edges
     neg_scores = link_predictor(embeddings, neg_edge_index)
     
-    # Combine scores and labels
     scores = torch.cat([pos_scores, neg_scores], dim=0)
     labels = torch.cat([
         torch.ones(pos_scores.size(0), device=pos_scores.device),
         torch.zeros(neg_scores.size(0), device=neg_scores.device)
     ], dim=0)
     
-    # Binary cross-entropy loss
-    loss = F.binary_cross_entropy_with_logits(scores, labels)
+    return F.binary_cross_entropy_with_logits(scores, labels)
+
+
+def compute_dine_loss(embeddings, pos_edge_index, neg_edge_index, link_predictor, 
+                     orth_coeff=1.0, size_coeff=1.0):
+    """
+    Compute DINE loss: BCE + orthogonality regularization + size regularization.
     
-    return loss
+    Args:
+        embeddings: Node embeddings from CompGCN [num_nodes, embedding_dim]
+        pos_edge_index: Positive edges [2, num_pos_edges]
+        neg_edge_index: Negative edges [2, num_neg_edges]
+        link_predictor: Decoder model or scoring function
+        orth_coeff: Weight for orthogonality loss
+        size_coeff: Weight for size loss
+    
+    Returns:
+        loss: Combined DINE loss (scalar)
+    """
+    # Apply ReLU to embeddings as required by DINE
+    embeddings = F.relu(embeddings)
+    
+    # Base loss (BCE)
+    base_loss = compute_link_prediction_loss(embeddings, pos_edge_index, neg_edge_index, link_predictor)
+    
+    # Regularization losses
+    orth_loss = dine.compute_orthogonality_loss(embeddings)
+    size_loss = dine.compute_size_loss(embeddings)
+    
+    return base_loss + orth_coeff * orth_loss + size_coeff * size_loss
 
 
 def compute_reconstruction_loss(embeddings, original_features):
     """
-    Simple reconstruction loss (MSE between embeddings and original features).
-    This is a placeholder - not recommended for production use.
+    Compute reconstruction loss (MSE between embeddings and original features).
     
     Args:
-        embeddings: Learned node embeddings
-        original_features: Original node features
+        embeddings: Learned node embeddings [num_nodes, embedding_dim]
+        original_features: Original node features [num_nodes, feature_dim]
     
     Returns:
-        loss: MSE loss
+        loss: MSE loss (scalar)
     """
-    # Truncate original features to match embedding dimension
     target = original_features[:, :embeddings.size(1)]
-    loss = F.mse_loss(embeddings, target)
-    return loss
-
+    return F.mse_loss(embeddings, target)
 
 
 def compute_contrastive_loss(pos_scores, neg_scores, margin=1.0):
@@ -173,25 +191,39 @@ def compute_contrastive_loss(pos_scores, neg_scores, margin=1.0):
     loss = F.relu(margin - pos_scores + neg_scores)
     return loss.mean()
 
+def compute_dine_contrastive_loss( embeddings, pos_edge_index, neg_edge_index, link_predictor, dine_weight=0.5, contrastive_weight=0.5, orth_coeff=1.0, size_coeff=1.0, margin=1.0):
+    dine_loss = compute_dine_loss(
+        embeddings, pos_edge_index, neg_edge_index, link_predictor,
+        orth_coeff=orth_coeff, size_coeff=size_coeff
+    )
+
+    pos_scores = link_predictor(embeddings, pos_edge_index)
+    neg_scores = link_predictor(embeddings, neg_edge_index)
+    contrastive_loss = compute_contrastive_loss(pos_scores, neg_scores, margin=margin)
+
+    total_loss = dine_weight * dine_loss + contrastive_weight * contrastive_loss
+    return total_loss
 
 def train_compgcn(data, model, link_predictor, optimizer, device,
                   loss_fn="link_prediction",
                   ortloss_coeff=1.0,
                   sizeloss_coeff=1.0,
-                  margin=1.0  # <-- Add margin as a new parameter
-    ):
+                  margin=1.0):
     """
     Training step for CompGCN with configurable loss function.
     
     Args:
-        data: PyTorch Geometric Data object
+        data: PyTorch Geometric Data object containing:
+            - x: Node features
+            - edge_index: Edge indices
+            - edge_type: Edge type labels
         model: CompGCN model
         link_predictor: LinkPredictor model or scoring function
-        optimizer: Optimizer
+        optimizer: PyTorch optimizer
         device: Device (cpu or cuda)
-        loss_fn: Loss function to use.
-        ortloss_coeff: Coefficient for DINE orthogonality loss
-        sizeloss_coeff: Coefficient for DINE size loss
+        loss_fn: One of ["link_prediction", "dine", "contrastive", "reconstruction"]
+        ortloss_coeff: Weight for DINE orthogonality loss
+        sizeloss_coeff: Weight for DINE size loss
         margin: Margin for contrastive loss
     
     Returns:
@@ -206,52 +238,45 @@ def train_compgcn(data, model, link_predictor, optimizer, device,
     # Forward pass through CompGCN
     embeddings = model(data.x, data.edge_index, data.edge_type)
     
-    # Shared logic for link-based losses
+    # Handle link-based losses (link prediction, DINE, contrastive)
     if loss_fn in ["link_prediction", "dine", "contrastive"]:
-        if loss_fn == "dine":
-            embeddings = F.relu(embeddings)  # DINE uses ReLU
-        
         # Generate negative samples
         neg_edge_index = negative_sampling(
             edge_index=data.edge_index,
             num_nodes=data.x.size(0),
-            num_neg_samples=data.edge_index.size(1),  # Same number as positive edges
+            num_neg_samples=data.edge_index.size(1)
         )
         
-        # Get scores from the predictor
-        pos_scores = link_predictor(embeddings, data.edge_index)
-        neg_scores = link_predictor(embeddings, neg_edge_index)
-
-        # --- Compute loss based on selected function ---
         if loss_fn == "link_prediction":
-            scores = torch.cat([pos_scores, neg_scores], dim=0)
-            labels = torch.cat([
-                torch.ones(pos_scores.size(0), device=pos_scores.device),
-                torch.zeros(neg_scores.size(0), device=neg_scores.device)
-            ], dim=0)
-            loss = F.binary_cross_entropy_with_logits(scores, labels)
-
+            loss = compute_link_prediction_loss(embeddings, data.edge_index, neg_edge_index, link_predictor)
+        
         elif loss_fn == "dine":
-            scores = torch.cat([pos_scores, neg_scores], dim=0)
-            labels = torch.cat([
-                torch.ones(pos_scores.size(0), device=pos_scores.device),
-                torch.zeros(neg_scores.size(0), device=neg_scores.device)
-            ], dim=0)
-            # DINE is BCE loss + regularization
-            loss = F.binary_cross_entropy_with_logits(scores, labels)
-            loss += ortloss_coeff * dine.compute_orthogonality_loss(embeddings)
-            loss += sizeloss_coeff * dine.compute_size_loss(embeddings)
-
+            loss = compute_dine_loss(
+                embeddings, data.edge_index, neg_edge_index, link_predictor,
+                orth_coeff=ortloss_coeff, size_coeff=sizeloss_coeff
+            )
+        
         elif loss_fn == "contrastive":
-            # Use our new contrastive loss function
+            pos_scores = link_predictor(embeddings, data.edge_index)
+            neg_scores = link_predictor(embeddings, neg_edge_index)
             loss = compute_contrastive_loss(pos_scores, neg_scores, margin=margin)
+
+        elif loss_fn == "dine_contrastive":
+            loss = compute_dine_contrastive_loss(
+                embeddings, data.edge_index, neg_edge_index, link_predictor,
+                dine_weight=0.7, contrastive_weight=0.3,
+                orth_coeff=ortloss_coeff, size_coeff=sizeloss_coeff, margin=margin
+            )
     
+    # Handle reconstruction loss
     elif loss_fn == "reconstruction":
-        # Compute reconstruction loss
         loss = compute_reconstruction_loss(embeddings, data.x)
     
     else:
-        raise ValueError(f"Unknown loss fn: {loss_fn}. Choose 'link_prediction', 'dine', 'contrastive', or 'reconstruction'.")
+        raise ValueError(
+            f"Unknown loss function: {loss_fn}. "
+            "Choose from: link_prediction, dine, contrastive, dine_contrastive"
+        )
 
     loss.backward()
     optimizer.step()
