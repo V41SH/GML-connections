@@ -216,11 +216,12 @@ def main():
     dropout = 0.3
     
     # Training configuration
-    # loss_function = "link_prediction"  # Options: 'link_prediction', 'reconstruction', 'dine
-    loss_function = "dine"  # Options: 'link_prediction', 'reconstruction', 'dine
+    # loss_function = "link_prediction"  # Options: 'link_prediction', 'reconstruction', 'dine', 'contrastive'
+    loss_function = "contrastive"  # <-- Set to 'contrastive'
     num_epochs = 100
     learning_rate = 0.01
     weight_decay = 5e-4
+    margin = 1.0  
 
     # Initialize CompGCN model
     model = CompGCN(
@@ -235,14 +236,15 @@ def main():
     
     # Initialize LinkPredictor (decoder) if using link prediction loss
     link_predictor = None
-    if loss_function == "link_prediction":
+    if loss_function == "link_prediction" or loss_function == "contrastive": # <-- Add 'contrastive'
         link_predictor = LinkPredictor(
             in_channels=out_channels,
             hidden_channels=64
         ).to(device)
-        print("Initialized LinkPredictor for link prediction loss.")
+        print(f"Initialized LinkPredictor for {loss_function} loss.")
     elif loss_function == "dine":
         link_predictor = dine.embedding_product
+        print("Using 'dine.embedding_product' as link predictor.")
     
     # Optimizer - optimize both model and link predictor parameters
     params = list(model.parameters())
@@ -261,8 +263,11 @@ def main():
     print(f"\nTraining CompGCN with '{loss_function}' loss...")
 
     for epoch in tqdm(range(num_epochs), desc="Training Epochs"):
-        loss = train_compgcn(data, model, link_predictor, optimizer, device, loss_fn=loss_function)
-
+        loss = train_compgcn(
+            data, model, link_predictor, optimizer, device, 
+            loss_fn=loss_function, 
+            margin=margin  # <-- Pass the margin
+        )
         if (epoch + 1) % 10 == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss:.4f}")
 
