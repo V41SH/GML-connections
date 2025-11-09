@@ -1,0 +1,224 @@
+import os
+import pickle
+import numpy as np
+from pathlib import Path
+from itertools import combinations
+from sklearn.metrics.pairwise import cosine_similarity
+from typing import Dict, List
+from tqdm import tqdm
+from load_connections import load_connections_game
+
+
+class Node2VecEvaluator:
+    """
+    Evaluates Node2Vec model (.pkl) on the Connections game task.
+    Works with gensim Word2Vec models saved as pickle files.
+    """
+
+    def __init__(self, model_path: str):
+        self.model_path = model_path
+        self.model = None
+        self._load_model()
+
+    def _load_model(self):
+        """Load Node2Vec model from pickle file."""
+        if not os.path.exists(self.model_path):
+            raise FileNotFoundError(f"Model file not found: {self.model_path}")
+
+        print(f"Loading Node2Vec model from {self.model_path}")
+        with open(self.model_path, "rb") as f:
+            self.model = pickle.load(f)
+        
+        # Check if it's a gensim Word2Vec model
+        if hasattr(self.model, 'wv'):
+            # Gensim 4.x style - uses KeyedVectors
+            self.wv = self.model.wv
+            vocab_size = len(self.wv)
+            emb_dim = self.wv.vector_size
+        elif hasattr(self.model, 'key_to_index'):
+            # Already a KeyedVectors object
+            self.wv = self.model
+            vocab_size = len(self.wv)
+            emb_dim = self.wv.vector_size
+        else:
+            # Older gensim or custom format
+            self.wv = self.model
+            vocab_size = len(self.model.vocab) if hasattr(self.model, 'vocab') else "unknown"
+            emb_dim = self.model.vector_size if hasattr(self.model, 'vector_size') else "unknown"
+        
+        print(f"Loaded model with {vocab_size} nodes, embedding dim = {emb_dim}")
+
+    def get_word_embedding(self, word: str):
+        """Return embedding for a given word if available."""
+        word = word.lower()
+        
+        try:
+            # Try gensim 4.x style
+            if hasattr(self.wv, '__getitem__'):
+                return self.wv[word]
+            # Try older style
+            elif hasattr(self.wv, 'get_vector'):
+                return self.wv.get_vector(word)
+            # Try direct access
+            elif word in self.wv:
+                return self.wv[word]
+        except (KeyError, Exception):
+            return None
+        
+        return None
+
+    def group_average_similarity(self, word_indices: List[int], sim_matrix: np.ndarray) -> float:
+        """Average pairwise cosine similarity within a group."""
+        if len(word_indices) <= 1:
+            return 0.0
+        return np.mean([sim_matrix[i, j] for i, j in combinations(word_indices, 2)])
+
+    def find_best_group(self, available: set, sim_matrix: np.ndarray, size: int = 4) -> List[int]:
+        """Find the most mutually similar group of given size."""
+        best_group, best_score = [], -1
+        for i in available:
+            sims = sim_matrix[i]
+            candidates = sorted([j for j in available if j != i],
+                                key=lambda x: sims[x], reverse=True)
+            if len(candidates) < size - 1:
+                continue
+            group = [i] + candidates[:size - 1]
+            score = self.group_average_similarity(group, sim_matrix)
+            if score > best_score:
+                best_score, best_group = score, group
+        return best_group
+
+    def predict_groups(self, words: List[str], group_size: int = 4, num_groups: int = 4) -> List[List[str]]:
+        """Predict groups of related words."""
+        valid_words, word_embs = [], []
+        for w in words:
+            emb = self.get_word_embedding(w)
+            if emb is not None:
+                valid_words.append(w.lower())
+                word_embs.append(emb)
+
+        if len(valid_words) < group_size * num_groups:
+            print(f"Warning: only {len(valid_words)} valid words found.")
+            if len(valid_words) == 0:
+                return []  # Return empty list if no valid words are found
+
+        word_embs = np.array(word_embs)
+        sim = cosine_similarity(np.array(word_embs))
+        available = set(range(len(valid_words)))
+        groups = []
+
+        for _ in range(num_groups):
+            if len(available) < group_size:
+                break
+            group = self.find_best_group(available, sim, group_size)
+            if not group:
+                break
+            groups.append([valid_words[i] for i in group])
+            available -= set(group)
+        return groups
+
+    def _calculate_metrics(self, true_groups: List[List[str]], pred_groups: List[List[str]]) -> Dict:
+        """Compute accuracy, exact matches, and pairwise F1."""
+        true_groups = [[w.lower() for w in g] for g in true_groups]
+        pred_groups = [[w.lower() for w in g] for g in pred_groups]
+
+        # Exact matches
+        exact_matches = sum(set(pg) in [set(tg) for tg in true_groups] for pg in pred_groups)
+
+        # Group accuracy
+        if not pred_groups:  # If no predictions were made
+            group_accs = [0.0 for _ in true_groups]  # Zero accuracy for all groups
+        else:
+            group_accs = [
+                max(len(set(tg) & set(pg)) / len(tg) for pg in pred_groups)
+                for tg in true_groups
+            ]
+
+        # Pairwise F1
+        def pairs(groups):
+            return {tuple(sorted(p)) for g in groups for p in combinations(g, 2)}
+
+        true_pairs = pairs(true_groups)
+        pred_pairs = pairs(pred_groups) if pred_groups else set()
+        tp = len(true_pairs & pred_pairs)
+        fp = len(pred_pairs - true_pairs)
+        fn = len(true_pairs - pred_pairs)
+        precision = tp / (tp + fp) if tp + fp else 0
+        recall = tp / (tp + fn) if tp + fn else 0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0
+
+        return {
+            "exact_matches": exact_matches,
+            "avg_group_accuracy": np.mean(group_accs),
+            "pairwise_f1": f1,
+        }
+
+    def evaluate_game(self, game_id: int, csv_path: str) -> Dict:
+        """Evaluate model on one Connections game."""
+        try:
+            data = load_connections_game(csv_path, game_id)
+        except Exception as e:
+            print(f"Skipping game {game_id}: {e}")
+            return None
+
+        true_groups = [g["words"] for g in data["groups"].values()]
+        pred_groups = self.predict_groups(data["all_words"])
+        return self._calculate_metrics(true_groups, pred_groups)
+
+    def evaluate_multiple_games(self, game_ids: List[int], csv_path: str) -> Dict:
+        """Evaluate over multiple games and average results."""
+        all_metrics = []
+        best_game = {"id": None, "score": -1, "metrics": None}
+
+        for gid in tqdm(game_ids, desc="Evaluating games", unit="game"):
+            metrics = self.evaluate_game(gid, csv_path)
+            if metrics:
+                all_metrics.append(metrics)
+                # Calculate average score for this game
+                avg_score = np.mean([
+                    metrics["exact_matches"],
+                    metrics["avg_group_accuracy"],
+                    metrics["pairwise_f1"]
+                ])
+                if avg_score > best_game["score"]:
+                    best_game = {"id": gid, "score": avg_score, "metrics": metrics}
+
+        if not all_metrics:
+            print("No valid games evaluated.")
+            return {}
+
+        agg = {
+            "avg_exact_matches": np.mean([m["exact_matches"] for m in all_metrics]),
+            "avg_group_accuracy": np.mean([m["avg_group_accuracy"] for m in all_metrics]),
+            "avg_pairwise_f1": np.mean([m["pairwise_f1"] for m in all_metrics]),
+        }
+
+        print("\nAggregated results (averaged over valid games):")
+        for k, v in agg.items():
+            print(f"  {k}: {v:.3f}")
+        print(f"  Games evaluated: {len(all_metrics)} / {len(game_ids)}")
+        
+        print("\nBest performing game:")
+        print(f"  Game ID: {best_game['id']}")
+        print(f"  Average score: {best_game['score']:.3f}")
+        print("  Individual metrics:")
+        for k, v in best_game['metrics'].items():
+            print(f"    {k}: {v:.3f}")
+        
+        agg["best_game"] = best_game
+        return agg
+
+
+def main():
+    # Example usage - adjust path to your Node2Vec model
+    evaluator = Node2VecEvaluator("models/node2vec_conceptnet_subgraph_model.pkl")
+    
+    # Evaluate on all games or a subset
+    game_ids = list(range(1, 872))  # All games
+    # game_ids = [870, 871]  # Specific games for testing
+    
+    evaluator.evaluate_multiple_games(game_ids, "connections_data/Connections_Data.csv")
+
+
+if __name__ == "__main__":
+    main()

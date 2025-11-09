@@ -11,9 +11,9 @@ import torch
 import pickle
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from load_conceptnet import load_conceptnet_graph
 from load_connections import load_connections_game
 from scripts.utils import load_fasttext_embeddings
+from load_khop_conceptnet import load_conceptnet_subgraph
 
 # Global variable to store node features (replaces embeddings_fasttext)
 node_features = None
@@ -21,6 +21,7 @@ node_features = None
 
 def train_node2vec(
     csv_path,
+    connections_csv_path: str = "connections_data/Connections_Data.csv",
     min_strength=0.05,
     dimensions=64,
     walk_length=100,
@@ -29,7 +30,7 @@ def train_node2vec(
     workers=4,
     p=1,
     q=1,
-    model_path="models/node2vec_conceptnet_model.pkl",
+    model_path="models/node2vec_conceptnet_subgraph_model.pkl",
 ):
     """
     Train Node2Vec on ConceptNet data with model saving/loading.
@@ -67,8 +68,12 @@ def train_node2vec(
             saved_data["model"],
         )
 
-    # Load data
-    _, G_directed, word2idx, idx2word, rel2idx = load_conceptnet_graph(csv_path)
+    # Load data (use the provided connections CSV path)
+    _, G_directed, word2idx, idx2word, rel2idx = load_conceptnet_subgraph(
+        csv_path=csv_path,
+        connections_csv_path=connections_csv_path,
+        k_hops=1,
+    )
     print(f"Loaded: {len(G_directed.nodes())} nodes, {len(G_directed.edges())} edges")
 
     # Convert to undirected and relabel nodes
