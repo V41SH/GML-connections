@@ -11,22 +11,23 @@ import torch
 import pickle
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from load_graphs import load_swow_en18
+from load_conceptnet import load_conceptnet_graph
 from load_connections import load_connections_game
 
 
 import fasttext
 import fasttext.util
-fasttext.util.download_model('en', if_exists='ignore')  # English
-ft = fasttext.load_model('cc.en.300.bin')
+
+fasttext.util.download_model("en", if_exists="ignore")  # English
+ft = fasttext.load_model("cc.en.300.bin")
 
 from get_embeddings import get_embeddings
 
 if not os.path.exists("embeddings.pickle"):
     get_embeddings()
 
-with open('embeddings.pickle', 'rb') as handle:
-   embeddings_fasttext = pickle.load(handle)
+with open("embeddings.pickle", "rb") as handle:
+    embeddings_fasttext = pickle.load(handle)
 
 
 def train_node2vec(
@@ -121,7 +122,9 @@ def train_node2vec(
     return embedding, word2idx, idx2word, idx2embedding, model
 
 
-def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings", groups=None):
+def plot_embeddings(
+    embedding, words, word2idx, idx2word, title="Word Embeddings", groups=None
+):
     """Plot word embeddings in 2D using PCA."""
     # Filter valid words
     print("words:")
@@ -141,15 +144,22 @@ def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings
 
     # Apply PCA
     pca_result = PCA(n_components=2).fit_transform(embedding[indices])
-    
+
     # Plot
     plt.figure(figsize=(12, 8))
-    
+
     # Use different colors for different groups if provided
     if groups:
-        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']  # Different colors for each group
+        colors = [
+            "#FF6B6B",
+            "#4ECDC4",
+            "#45B7D1",
+            "#96CEB4",
+        ]  # Different colors for each group
         for group_idx, group_words in enumerate(groups):
-            group_indices = [i for i, word in enumerate(valid_words) if word in group_words]
+            group_indices = [
+                i for i, word in enumerate(valid_words) if word in group_words
+            ]
             if group_indices:
                 plt.scatter(
                     pca_result[group_indices, 0],
@@ -157,7 +167,7 @@ def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings
                     alpha=0.6,
                     s=100,
                     color=colors[group_idx % len(colors)],
-                    label=f'Group {group_idx + 1}'
+                    label=f"Group {group_idx + 1}",
                 )
     else:
         plt.scatter(pca_result[:, 0], pca_result[:, 1], alpha=0.6, s=100)
@@ -172,7 +182,7 @@ def plot_embeddings(embedding, words, word2idx, idx2word, title="Word Embeddings
 
     if groups:
         plt.legend()
-        
+
     plt.xlabel("PC1")
     plt.ylabel("PC2")
     plt.title(title)
@@ -219,14 +229,14 @@ def test_with_connections():
         "connections_data/Connections_Data.csv", game_id=870
     )
     words = connections_data["all_words"]
-    
+
     # Get embeddings for valid words
     valid_words = [w.lower() for w in words if w.lower() in word2idx]
     valid_indices = [word2idx[w] for w in valid_words]
-    
+
     for nonword in set(words) - set(valid_words):
         current_embedding = ft.get_word_vector(nonword)
-        
+
         # f*ck it do it myself
         myitem = next(iter(embeddings_fasttext.items()))
         closest_embedding = myitem[1]
@@ -244,10 +254,10 @@ def test_with_connections():
         print(f"Unseen word {nonword} replaced by {idx2word[closest_embedding_index]}")
 
     valid_embeddings = embedding[valid_indices]
-    
+
     # Calculate pairwise similarities
     similarities = cosine_similarity(valid_embeddings)
-    
+
     # Create groups based on mutual similarity
     def group_average_similarity(word_indices, similarities_matrix):
         """Calculate the average pairwise similarity within a group"""
@@ -256,14 +266,16 @@ def test_with_connections():
         pair_similarities = []
         for i in range(len(word_indices)):
             for j in range(i + 1, len(word_indices)):
-                pair_similarities.append(similarities_matrix[word_indices[i]][word_indices[j]])
+                pair_similarities.append(
+                    similarities_matrix[word_indices[i]][word_indices[j]]
+                )
         return np.mean(pair_similarities)
 
     def find_best_group(available_indices, similarities_matrix, size=4):
         """Find the group of given size with highest average mutual similarity"""
         best_group = []
         best_score = -1
-        
+
         # Try each word as a starting point
         for start_idx in available_indices:
             # Get similarities to all other available words
@@ -271,87 +283,49 @@ def test_with_connections():
             # Get indices of most similar available words
             candidate_indices = [i for i in available_indices if i != start_idx]
             candidate_indices.sort(key=lambda x: current_sims[x], reverse=True)
-            
+
             # Try top N most similar words
             for subset in range(min(10, len(candidate_indices) - size + 2)):
-                potential_group = [start_idx] + candidate_indices[subset:subset + size - 1]
+                potential_group = [start_idx] + candidate_indices[
+                    subset : subset + size - 1
+                ]
                 if len(potential_group) == size:
-                    score = group_average_similarity(potential_group, similarities_matrix)
+                    score = group_average_similarity(
+                        potential_group, similarities_matrix
+                    )
                     if score > best_score:
                         best_score = score
                         best_group = potential_group
-        
+
         return best_group, best_score
 
     # Create groups based on mutual similarity
     groups = []
     available_indices = set(range(len(valid_words)))
-    
+
     while len(available_indices) >= 4:
         best_group, score = find_best_group(available_indices, similarities)
         if not best_group or score < 0:
             break
-            
+
         # Add group and remove used words
         groups.append([valid_words[i] for i in best_group])
         available_indices -= set(best_group)
-    
+
     # Plot with the automatically generated groups
-    plot_embeddings(embedding, words, word2idx, idx2word, 
-                   title="Connections Game 870 (Auto-Grouped)", 
-                   groups=groups)
-    
+    plot_embeddings(
+        embedding,
+        words,
+        word2idx,
+        idx2word,
+        title="Connections Game 870 (Auto-Grouped)",
+        groups=groups,
+    )
+
     # Print the groups for analysis
     print("\nAutomatically generated groups based on embedding similarity:")
     for i, group in enumerate(groups):
         print(f"Group {i + 1}: {', '.join(group)}")
-
-
-def hand_made_test():
-    """Example usage."""
-    # Configuration
-    CSV_FILE = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
-    MIN_STRENGTH = 0.05
-    DIMENSIONS = 64
-
-    # Train model (or load if exists)
-    embedding, word2idx, idx2word, model = train_node2vec(
-        CSV_FILE,
-        min_strength=MIN_STRENGTH,
-        dimensions=DIMENSIONS,
-        walk_length=100,
-        num_walks=10,
-        window_size=5,
-        p=1,
-        q=1,
-        model_path="models/swow_node2vec_64d.pkl",
-    )
-
-    # Example 1: Plot semantic categories
-    print("=== Plotting semantic categories ===")
-    words = [
-        "dog",
-        "cat",
-        "animal",
-        "pet",
-        "house",
-        "home",
-        "happy",
-        "sad",
-        "joy",
-        "anger",
-    ]
-    plot_embeddings(embedding, words, word2idx, idx2word, "Semantic Word Embeddings")
-
-    # Example 2: Find similar words
-    print("\n=== Similar words to 'happy' ===")
-    for word, score in find_similar(embedding, "happy", word2idx, idx2word):
-        print(f"  {word}: {score:.3f}")
-
-    # Example 3: Compare emotion words
-    print("\n=== Similar words to 'sad' ===")
-    for word, score in find_similar(embedding, "sad", word2idx, idx2word):
-        print(f"  {word}: {score:.3f}")
 
 
 def init():
