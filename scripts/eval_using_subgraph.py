@@ -10,9 +10,7 @@ from load_connections import load_connections_game
 import utils
 import dine
 
-# ---
-# Helper Function
-# ---
+SOURCE_FILE = "dimension_subgraphs_connections_only_dim64_ort5.pkl"
 
 
 def get_subgraph_edge_set(edge_index: torch.Tensor) -> Set[Tuple[int, int]]:
@@ -372,7 +370,8 @@ def main():
 
     # subgraphs_path = os.path.join(base_dir, "dimension_subgraphs.pkl")
     subgraphs_path = os.path.join(
-        base_dir, "dimension_subgraphs_connections_only_dim64.pkl"
+        # base_dir, "dimension_subgraphs_connections_only_dim64.pkl"
+        base_dir, SOURCE_FILE
     )
     embedding_path = os.path.join(base_dir, "compgcn_node_embeddings_dim64.npy")
 

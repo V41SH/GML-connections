@@ -211,7 +211,7 @@ def main():
     # Model hyperparameters
     in_channels = 300  # FastText embedding dimension
     hidden_channels = 128
-    out_channels = 128
+    out_channels = 64
     num_relations = len(relation_to_idx)
     num_layers = 2
     dropout = 0.3
@@ -270,7 +270,8 @@ def main():
             optimizer,
             device,
             loss_fn=loss_function,
-            margin=margin,  # <-- Pass the margin
+            margin=margin,
+            ortloss_coeff=5.0
         )
         if (epoch + 1) % 10 == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss:.4f}")

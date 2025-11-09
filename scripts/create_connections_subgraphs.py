@@ -14,8 +14,8 @@ base_dir = "graphs"
 csv_path = "connections_data/Connections_Data.csv"
 game_ids = list(range(1, 872))
 gml_path = os.path.join(base_dir, "conceptnet_graph.gml")
-embedding_path = os.path.join(base_dir, "compgcn_node_embeddings_dim128.npy")
-output_path = os.path.join(base_dir, "dimension_subgraphs_connections_only_dim128.pkl")
+embedding_path = os.path.join(base_dir, "compgcn_node_embeddings_dim64_ort5.npy")
+output_path = os.path.join(base_dir, "dimension_subgraphs_connections_only_dim64_ort5.pkl")
    
 
 

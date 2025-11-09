@@ -3,7 +3,8 @@ import os
 
 # --- CONFIGURE THIS ---
 # Point this to the file you just used for evaluation
-subgraphs_path = "graphs/dimension_subgraphs_connections_only_dim128.pkl"
+# subgraphs_path = "graphs/dimension_subgraphs_connections_only_dim128.pkl"
+subgraphs_path = "graphs/dimension_subgraphs_connections_only_dim64_ort5.pkl"
 # ---
 
 print(f"Inspecting subgraph file: {subgraphs_path}")
