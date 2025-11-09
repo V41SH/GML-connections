@@ -56,6 +56,25 @@ class Node2VecEvaluator:
                 print(f"Loaded {len(word2idx)} nodes, embedding dim = {embedding.shape[1]}")
                 return
         
+        #  NEW: Handle custom dictionary format
+        if isinstance(model_data, dict):
+            print("Detected dictionary format pickle")
+            # --- THIS IS AN EXAMPLE - ADJUST KEYS BASED ON YOUR INSPECTION ---
+            if 'embeddings' in model_data and 'word2idx' in model_data and 'idx2word' in model_data:
+                self.embedding_matrix = model_data['embeddings']
+                self.word2idx = model_data['word2idx']
+                self.idx2word = model_data['idx2word']
+                self.model = None
+                self.wv = None
+                print(f"Loaded {len(self.word2idx)} nodes from dict.")
+                return
+            elif 'model' in model_data:
+                 print("Found 'model' key in dict, loading it.")
+                 model_data = model_data['model'] # Treat the inner model as the data
+            else:
+                raise ValueError("Pickle is a dictionary, but required keys are missing.")
+        
+
         # Standard gensim model
         self.model = model_data
         
@@ -70,18 +89,34 @@ class Node2VecEvaluator:
             self.wv = self.model
             vocab_size = len(self.wv)
             emb_dim = self.wv.vector_size
-        else:
-            # Older gensim or custom format
+        elif hasattr(self.model, 'vocab') or hasattr(self.model, 'index2word'):
+            # --- THIS IS THE ROBUST FIX ---
+            # Older gensim or custom format. 
+            # We explicitly assign self.wv to the model itself,
+            # assuming it behaves like KeyedVectors (which it does).
+            # BUT, if it has a .wv attribute, use that instead.
+            print("Detected older gensim model format.")
             self.wv = self.model
-            vocab_size = len(self.model.vocab) if hasattr(self.model, 'vocab') else "unknown"
-            emb_dim = self.model.vector_size if hasattr(self.model, 'vector_size') else "unknown"
+        else:
+            # --- ADD A FINAL CHECK ---
+            raise TypeError(
+                "Loaded pickle file is not a recognized format. "
+                "It's not a (embedding, word2idx, idx2word) tuple "
+                "and does not appear to be a gensim model (missing .wv or .key_to_index)."
+            )
+
+        # --- MOVE WV-DEPENDENT ATTRIBUTES OUTSIDE THE IF/ELSE ---
+        vocab_size = len(self.wv)
+        emb_dim = self.wv.vector_size
         
         # Build idx2word mapping for fallback
         if hasattr(self.wv, 'index_to_key'):
             self.idx2word = {i: word for i, word in enumerate(self.wv.index_to_key)}
         elif hasattr(self.wv, 'index2word'):
             self.idx2word = {i: word for i, word in enumerate(self.wv.index2word)}
-        
+        else:
+            print("Warning: Could not build idx2word mapping. Fallback may fail.")
+
         print(f"Loaded model with {vocab_size} nodes, embedding dim = {emb_dim}")
 
     def _load_fasttext(self, model_path: str, embeddings_pickle_path: str):
@@ -196,31 +231,49 @@ class Node2VecEvaluator:
                     return self.embedding_matrix[closest_idx], closest_word
             return None, None
         
-        # Handle gensim format
+       # Handle gensim format
         try:
-            # Try to get embedding from model
-            if hasattr(self.wv, '__getitem__'):
-                return self.wv[word], word
-            elif hasattr(self.wv, 'get_vector'):
+            # Use get_vector() as it's the standard.
+            # This works for Word2Vec (In-Vocab) and FastText (In-Vocab & OOV).
+            if hasattr(self.wv, 'get_vector'):
                 return self.wv.get_vector(word), word
-            elif word in self.wv:
+            # Fallback for dict-like models
+            elif hasattr(self.wv, '__getitem__'):
                 return self.wv[word], word
-        except (KeyError, Exception):
-            # Word not in vocabulary, try FastText fallback
+                
+        except KeyError:
+            # This block is *only* reached for OOV words in
+            # non-FastText models (like Word2Vec).
+            
             if self.use_fasttext_fallback:
+                # This now assumes self.idx2word and self._find_closest_word_idx
+                # are correctly populated/working with the gensim vocab.
                 closest_idx = self._find_closest_word_idx(word)
+                
                 if closest_idx is not None and self.idx2word is not None:
                     closest_word = self.idx2word[closest_idx]
                     if verbose:
                         print(f"Unseen word '{word}' replaced by '{closest_word}'")
+                    
                     try:
-                        if hasattr(self.wv, '__getitem__'):
-                            return self.wv[closest_word], closest_word
-                        elif hasattr(self.wv, 'get_vector'):
+                        # Try to get the vector for the replacement word
+                        if hasattr(self.wv, 'get_vector'):
                             return self.wv.get_vector(closest_word), closest_word
-                    except:
-                        pass
+                        elif hasattr(self.wv, '__getitem__'):
+                            return self.wv[closest_word], closest_word
+                    except (KeyError, Exception) as e:
+                        # Be explicit about the failure, don't pass silently
+                        if verbose:
+                            print(f"Fallback word '{closest_word}' also not found: {e}")
+                        return None, None
+                        
+        except Exception as e:
+            # Catch any other unexpected errors
+            if verbose:
+                print(f"An unexpected error occurred for word '{word}': {e}")
+            return None, None
         
+        # All attempts failed
         return None, None
 
     def group_average_similarity(self, word_indices: List[int], sim_matrix: np.ndarray) -> float:
@@ -378,7 +431,7 @@ def main():
     evaluator = Node2VecEvaluator(
         model_path="models/swow_node2vec_64d.pkl",
         use_fasttext_fallback=True,  # Enable FastText fallback for missing words
-        fasttext_model_path='cc.en.300.bin',
+        fasttext_model_path='embedding_models/cc.en.300.bin',
         embeddings_pickle_path='embeddings.pickle'
     )
     
