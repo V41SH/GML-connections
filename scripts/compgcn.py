@@ -7,10 +7,10 @@ from torch_geometric.data import Data
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import add_self_loops
 from utils import (
-    load_graph_from_gml, 
+    load_graph_from_gml,
     load_fasttext_embeddings,
     LinkPredictor,
-    train_compgcn
+    train_compgcn,
 )
 from tqdm import tqdm
 from time import time
@@ -152,12 +152,14 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     # Device
-    
+
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # gabriel's stupid prompt
     if torch.cuda.is_available():
         print("!!!!")
-        answer = input("USER PROMPT: WOULD YOU LIKE TO USE CUDA?[type anything but 'no']> ")
+        answer = input(
+            "USER PROMPT: WOULD YOU LIKE TO USE CUDA?[type anything but 'no']> "
+        )
         if answer == "no":
             device = torch.device("cpu")
         else:
@@ -166,7 +168,6 @@ def main():
     else:
         device = torch.device("cpu")
 
-    
     print(f"Using device: {device}")
 
     # Load graph
@@ -214,14 +215,14 @@ def main():
     num_relations = len(relation_to_idx)
     num_layers = 2
     dropout = 0.3
-    
+
     # Training configuration
     # loss_function = "link_prediction"  # Options: 'link_prediction', 'reconstruction', 'dine', 'contrastive'
-    loss_function = "dine_contrastive"  
+    loss_function = "dine"
     num_epochs = 100
     learning_rate = 0.01
     weight_decay = 5e-4
-    margin = 1.0  
+    margin = 1.0
 
     # Initialize CompGCN model
     model = CompGCN(
@@ -233,25 +234,24 @@ def main():
         dropout=dropout,
         composition="sub",
     ).to(device)
-    
+
     # Initialize LinkPredictor (decoder) if using link prediction loss
     link_predictor = None
-    if loss_function == "link_prediction" or loss_function == "contrastive": 
-        link_predictor = LinkPredictor(
-            in_channels=out_channels,
-            hidden_channels=64
-        ).to(device)
+    if loss_function == "link_prediction" or loss_function == "contrastive":
+        link_predictor = LinkPredictor(in_channels=out_channels, hidden_channels=64).to(
+            device
+        )
         print(f"Initialized LinkPredictor for {loss_function} loss.")
     elif loss_function == "dine" or loss_function == "dine_contrastive":
         link_predictor = dine.embedding_product
         print("Using 'dine.embedding_product' as link predictor.")
-    
+
     # Optimizer - optimize both model and link predictor parameters
     params = list(model.parameters())
     # if link_predictor is not None:
     if isinstance(link_predictor, LinkPredictor):
         params += list(link_predictor.parameters())
-    
+
     optimizer = torch.optim.Adam(params, lr=learning_rate, weight_decay=weight_decay)
 
     t4 = time()
@@ -264,9 +264,13 @@ def main():
 
     for epoch in tqdm(range(num_epochs), desc="Training Epochs"):
         loss = train_compgcn(
-            data, model, link_predictor, optimizer, device, 
-            loss_fn=loss_function, 
-            margin=margin  # <-- Pass the margin
+            data,
+            model,
+            link_predictor,
+            optimizer,
+            device,
+            loss_fn=loss_function,
+            margin=margin,  # <-- Pass the margin
         )
         if (epoch + 1) % 10 == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss:.4f}")
