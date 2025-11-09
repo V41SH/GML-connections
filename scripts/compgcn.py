@@ -211,16 +211,17 @@ def main():
     # Model hyperparameters
     in_channels = 300  # FastText embedding dimension
     hidden_channels = 128
-    out_channels = 64
+    out_channels = 512
     num_relations = len(relation_to_idx)
-    num_layers = 2
-    dropout = 0.3
+    # num_layers = 2
+    num_layers = 1
+    dropout = 0.1
 
     # Training configuration
     # loss_function = "link_prediction"  # Options: 'link_prediction', 'reconstruction', 'dine', 'contrastive'
     loss_function = "dine"
-    num_epochs = 100
-    learning_rate = 0.01
+    num_epochs = 50
+    learning_rate = 0.001
     weight_decay = 5e-4
     margin = 1.0
 
@@ -271,7 +272,8 @@ def main():
             device,
             loss_fn=loss_function,
             margin=margin,
-            ortloss_coeff=5.0
+            ortloss_coeff=5.0,
+            sizeloss_coeff=5.0
         )
         if (epoch + 1) % 10 == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss:.4f}")

@@ -10,7 +10,7 @@ from load_connections import load_connections_game
 import utils
 import dine
 
-SOURCE_FILE = "dimension_subgraphs_connections_only_dim64_ort5.pkl"
+SOURCE_FILE = "dimension_subgraphs_connections_only_dim512.pkl"
 
 
 def get_subgraph_edge_set(edge_index: torch.Tensor) -> Set[Tuple[int, int]]:
