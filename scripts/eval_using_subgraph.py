@@ -250,6 +250,7 @@ class EmbeddingEvaluator:
 
     def evaluate_game(self, game_id: int, csv_path: str) -> Tuple[Dict, List[Dict]]:
         """Evaluate model on one Connections game using DINE subgraphs."""
+        print(f"Evaluating Game ID: {game_id}")
         try:
             data = load_connections_game(csv_path, game_id)
         except Exception as e:

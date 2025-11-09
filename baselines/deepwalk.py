@@ -13,21 +13,10 @@ import pickle
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from load_conceptnet import load_conceptnet_graph
 from load_connections import load_connections_game
+from scripts.utils import load_fasttext_embeddings
 
-
-import fasttext
-import fasttext.util
-
-fasttext.util.download_model("en", if_exists="ignore")  # English
-ft = fasttext.load_model("cc.en.300.bin")
-
-from get_embeddings import get_embeddings
-
-if not os.path.exists("embeddings.pickle"):
-    get_embeddings()
-
-with open("embeddings.pickle", "rb") as handle:
-    embeddings_fasttext = pickle.load(handle)
+# Global variable to store node features (replaces embeddings_fasttext)
+node_features = None
 
 
 def train_node2vec(
@@ -40,14 +29,14 @@ def train_node2vec(
     workers=4,
     p=1,
     q=1,
-    model_path="models/node2vec_model.pkl",
+    model_path="models/node2vec_conceptnet_model.pkl",
 ):
     """
-    Train Node2Vec on SWOW data with model saving/loading.
+    Train Node2Vec on ConceptNet data with model saving/loading.
 
     Args:
-        csv_path: Path to SWOW CSV file
-        min_strength: Minimum edge strength threshold
+        csv_path: Path to ConceptNet CSV file
+        min_strength: Minimum edge strength threshold (unused for ConceptNet)
         dimensions: Embedding dimension
         walk_length: Length of random walks
         num_walks: Number of walks per node
@@ -79,9 +68,7 @@ def train_node2vec(
         )
 
     # Load data
-    _, G_directed, word2idx, idx2word, idx2embedding = load_swow_en18(
-        csv_path, min_strength=min_strength
-    )
+    _, G_directed, word2idx, idx2word, rel2idx = load_conceptnet_graph(csv_path)
     print(f"Loaded: {len(G_directed.nodes())} nodes, {len(G_directed.edges())} edges")
 
     # Convert to undirected and relabel nodes
@@ -119,7 +106,7 @@ def train_node2vec(
         )
     print("Model saved successfully!")
 
-    return embedding, word2idx, idx2word, idx2embedding, model
+    return embedding, word2idx, idx2word, model
 
 
 def plot_embeddings(
@@ -207,9 +194,11 @@ def find_similar(embedding, word, word2idx, idx2word, top_k=10):
 
 def test_with_connections():
     """Example usage with specific connections game"""
+    global node_features
+
     # Configuration
-    CSV_FILE = "SWOW-EN18/strength.SWOW-EN.R123.20180827.csv"
-    MIN_STRENGTH = 0.05
+    CSV_FILE = "conceptnet/conceptnet_filtered_edges.csv"
+    MIN_STRENGTH = 0.05  # Not used for ConceptNet but kept for compatibility
     DIMENSIONS = 64
 
     # Train model
@@ -224,6 +213,15 @@ def test_with_connections():
         q=1,
     )
 
+    # Load node features if not already loaded
+    if node_features is None:
+        print("Loading node features using FastText...")
+        # Get all nodes from the word2idx
+        nodes = list(word2idx.keys())
+        node_features = load_fasttext_embeddings(nodes, embedding_dim=300)
+        node_features = node_features.numpy()  # Convert to numpy for compatibility
+        print(f"Loaded node features with shape: {node_features.shape}")
+
     # Load connections game data
     connections_data = load_connections_game(
         "connections_data/Connections_Data.csv", game_id=870
@@ -234,24 +232,31 @@ def test_with_connections():
     valid_words = [w.lower() for w in words if w.lower() in word2idx]
     valid_indices = [word2idx[w] for w in valid_words]
 
+    # For words not in vocabulary, find closest word based on FastText embeddings
+    import fasttext
+
+    ft = fasttext.load_model("embedding_models/cc.en.300.bin")
+
     for nonword in set(words) - set(valid_words):
-        current_embedding = ft.get_word_vector(nonword)
+        nonword_lower = nonword.lower()
+        current_embedding = ft.get_word_vector(nonword_lower)
 
-        # f*ck it do it myself
-        myitem = next(iter(embeddings_fasttext.items()))
-        closest_embedding = myitem[1]
-        closest_embedding_index = myitem[0]
-        closest_distance = np.linalg.norm(closest_embedding - current_embedding)
+        # Find closest word in our vocabulary based on FastText similarity
+        best_distance = float("inf")
+        best_idx = None
 
-        for idx, ft_embedding in embeddings_fasttext.items():
-            dist = np.linalg.norm(ft_embedding - current_embedding)
-            if dist < closest_distance:
-                closest_distance = dist
-                closest_embedding = ft_embedding
-                closest_embedding_index = idx
+        for word, idx in word2idx.items():
+            word_embedding = node_features[idx]
+            distance = np.linalg.norm(word_embedding - current_embedding)
+            if distance < best_distance:
+                best_distance = distance
+                best_idx = idx
 
-        valid_indices.append(closest_embedding_index)
-        print(f"Unseen word {nonword} replaced by {idx2word[closest_embedding_index]}")
+        if best_idx is not None:
+            valid_indices.append(best_idx)
+            print(f"Unseen word '{nonword}' replaced by '{idx2word[best_idx]}'")
+        else:
+            print(f"Could not find replacement for '{nonword}'")
 
     valid_embeddings = embedding[valid_indices]
 
@@ -318,7 +323,7 @@ def test_with_connections():
         words,
         word2idx,
         idx2word,
-        title="Connections Game 870 (Auto-Grouped)",
+        title="Connections Game 870 ConceptNet (Auto-Grouped)",
         groups=groups,
     )
 
