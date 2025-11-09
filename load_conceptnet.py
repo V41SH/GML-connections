@@ -5,31 +5,33 @@ from torch_geometric.data import Data
 import networkx as nx
 import numpy as np
 from time import time
+from typing import Set, List, Tuple
+from wordninja import split as wordninja_split
 
-from compoundEdges import add_compound_edges
 
-def load_conceptnet_graph(csv_path: str):
+PICKLE_NAME_DF = "graphs/conceptnet_filtered_edges_with_compounds.pkl"
+
+
+def load_conceptnet_graph(csv_path: str) -> tuple[Data, nx.DiGraph, dict, dict, dict]:
     """
     Load a pre-filtered ConceptNet CSV (start_word, end_word, relation, weight)
     and build a PyTorch Geometric graph with edge weights and relation types.
     """
-    print(f"Loading ConceptNet edges from: {csv_path}")
-    df = pd.read_csv(csv_path)
+    if os.path.exists(PICKLE_NAME_DF):
+        print(f"Loading preprocessed DataFrame from: {PICKLE_NAME_DF}")
+        df: pd.DataFrame = pd.read_pickle(PICKLE_NAME_DF)
+    else:
+        print(f"Loading ConceptNet edges from: {csv_path}")
+        df: pd.DataFrame = pd.read_csv(csv_path)
 
     # Normalize & clean
     df["start_word"] = df["start_word"].astype(str).str.lower()
     df["end_word"] = df["end_word"].astype(str).str.lower()
     df["relation"] = df["relation"].astype(str).str.lower()
 
-    existing_vocab = set(df['start_word'].unique()) | set (df['end_word'].unique())
-    df = add_compound_edges(
-        df,
-        word2idx=None,
-        existing_vocab=existing_vocab,
-        compound_weight=0.5,
-        compound_relation="compound_subword"
-    )
-    
+    df.to_pickle(PICKLE_NAME_DF)
+    print(f"DataFrame saved to: {PICKLE_NAME_DF}")
+
     # Build node vocabulary
     all_words = pd.Index(df["start_word"]).append(pd.Index(df["end_word"])).unique()
     word2idx = pd.Series(range(len(all_words)), index=all_words)
@@ -57,20 +59,24 @@ def load_conceptnet_graph(csv_path: str):
     )
 
     # ---- NetworkX directed graph ----
-    G = nx.from_pandas_edgelist(
-        df,
-        source="start_word",
-        target="end_word",
-        edge_attr=["weight", "relation"],
-        create_using=nx.DiGraph,
-    )
-
-    # Save the NetworkX graph to 'graphs' directory
     graphs_dir = os.path.join(os.path.dirname(__file__), "graphs")
     os.makedirs(graphs_dir, exist_ok=True)
     graph_save_path = os.path.join(graphs_dir, "conceptnet_graph.gml")
-    nx.write_gml(G, graph_save_path)
-    print(f"Graph saved to: {graph_save_path}")
+
+    if os.path.exists(graph_save_path):
+        print(f"Loading existing NetworkX graph from: {graph_save_path}")
+        G = nx.read_gml(graph_save_path)
+    else:
+        G = nx.from_pandas_edgelist(
+            df,
+            source="start_word",
+            target="end_word",
+            edge_attr=["weight", "relation"],
+            create_using=nx.DiGraph,
+        )
+        # Save the NetworkX graph to 'graphs' directory if freshly created
+        nx.write_gml(G, graph_save_path)
+        print(f"Graph saved to: {graph_save_path}")
 
     print(
         f"Loaded graph with {len(all_words):,} nodes, {len(df):,} edges, {len(relation_types)} relation types"

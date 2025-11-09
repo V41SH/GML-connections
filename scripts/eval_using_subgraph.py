@@ -298,8 +298,9 @@ def main():
     base_dir = "graphs"
     csv_path = "connections_data/Connections_Data.csv"
     
-    subgraphs_path = os.path.join(base_dir, "dimension_subgraphs.pkl")
-    embedding_path = os.path.join(base_dir, "compgcn_node_embeddings.npy")
+    # subgraphs_path = os.path.join(base_dir, "dimension_subgraphs.pkl")
+    subgraphs_path = os.path.join(base_dir, "dimension_subgraphs_connections_only_dim128.pkl")
+    embedding_path = os.path.join(base_dir, "compgcn_node_embeddings_dim128.npy")
     
     game_ids = list(range(1, 872)) 
     # game_ids = [870, 871] # Use a small list for quick testing
