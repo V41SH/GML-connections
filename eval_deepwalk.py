@@ -4,21 +4,34 @@ import numpy as np
 from pathlib import Path
 from itertools import combinations
 from sklearn.metrics.pairwise import cosine_similarity
-from typing import Dict, List
+from typing import Dict, List, Optional
 from tqdm import tqdm
 from load_connections import load_connections_game
+import fasttext
+import fasttext.util
 
 
 class Node2VecEvaluator:
     """
     Evaluates Node2Vec model (.pkl) on the Connections game task.
     Works with gensim Word2Vec models saved as pickle files.
+    Supports replacing missing words using FastText embeddings.
     """
 
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, use_fasttext_fallback: bool = True, 
+                 fasttext_model_path: str = 'cc.en.300.bin',
+                 embeddings_pickle_path: str = 'embeddings.pickle'):
         self.model_path = model_path
         self.model = None
+        self.use_fasttext_fallback = use_fasttext_fallback
+        self.ft = None
+        self.embeddings_fasttext = None
+        self.idx2word = None
+        
         self._load_model()
+        
+        if use_fasttext_fallback:
+            self._load_fasttext(fasttext_model_path, embeddings_pickle_path)
 
     def _load_model(self):
         """Load Node2Vec model from pickle file."""
@@ -27,7 +40,24 @@ class Node2VecEvaluator:
 
         print(f"Loading Node2Vec model from {self.model_path}")
         with open(self.model_path, "rb") as f:
-            self.model = pickle.load(f)
+            model_data = pickle.load(f)
+        
+        # Handle different pickle formats
+        if isinstance(model_data, tuple):
+            # Format: (embedding, word2idx, idx2word, ...)
+            print("Detected tuple format pickle")
+            if len(model_data) >= 3:
+                embedding, word2idx, idx2word = model_data[0], model_data[1], model_data[2]
+                self.model = None  # No gensim model in this format
+                self.wv = None
+                self.idx2word = idx2word
+                self.word2idx = word2idx
+                self.embedding_matrix = embedding
+                print(f"Loaded {len(word2idx)} nodes, embedding dim = {embedding.shape[1]}")
+                return
+        
+        # Standard gensim model
+        self.model = model_data
         
         # Check if it's a gensim Word2Vec model
         if hasattr(self.model, 'wv'):
@@ -46,26 +76,152 @@ class Node2VecEvaluator:
             vocab_size = len(self.model.vocab) if hasattr(self.model, 'vocab') else "unknown"
             emb_dim = self.model.vector_size if hasattr(self.model, 'vector_size') else "unknown"
         
+        # Build idx2word mapping for fallback
+        if hasattr(self.wv, 'index_to_key'):
+            self.idx2word = {i: word for i, word in enumerate(self.wv.index_to_key)}
+        elif hasattr(self.wv, 'index2word'):
+            self.idx2word = {i: word for i, word in enumerate(self.wv.index2word)}
+        
         print(f"Loaded model with {vocab_size} nodes, embedding dim = {emb_dim}")
 
-    def get_word_embedding(self, word: str):
-        """Return embedding for a given word if available."""
-        word = word.lower()
+    def _load_fasttext(self, model_path: str, embeddings_pickle_path: str):
+        """Load FastText model and pre-computed embeddings for fallback."""
+        # Download if needed
+        if not os.path.exists(model_path):
+            print("FastText model not found. Downloading (this may take a few minutes)...")
+            try:
+                fasttext.util.download_model('en', if_exists='ignore')
+                print("Download complete.")
+            except Exception as e:
+                print(f"Error downloading FastText model: {e}")
+                print("Continuing without FastText fallback...")
+                self.use_fasttext_fallback = False
+                return
         
         try:
-            # Try gensim 4.x style
-            if hasattr(self.wv, '__getitem__'):
-                return self.wv[word]
-            # Try older style
-            elif hasattr(self.wv, 'get_vector'):
-                return self.wv.get_vector(word)
-            # Try direct access
-            elif word in self.wv:
-                return self.wv[word]
-        except (KeyError, Exception):
+            import sys
+            print(f"Loading FastText model from {model_path}")
+            print("⏳ This will take about 60 seconds for the 6GB model file...")
+            print("(If it seems stuck, just wait - it's loading)")
+            sys.stdout.flush()  # Force output to display
+            
+            self.ft = fasttext.load_model(model_path)
+            
+            print("✓ FastText model loaded successfully!")
+            sys.stdout.flush()
+        except Exception as e:
+            print(f"✗ Error loading FastText model: {e}")
+            print("Continuing without FastText fallback...")
+            self.use_fasttext_fallback = False
+            return
+        
+        # Load pre-computed embeddings
+        if os.path.exists(embeddings_pickle_path):
+            print(f"Loading pre-computed embeddings from {embeddings_pickle_path}")
+            sys.stdout.flush()
+            with open(embeddings_pickle_path, 'rb') as handle:
+                self.embeddings_fasttext = pickle.load(handle)
+            print(f"✓ Loaded {len(self.embeddings_fasttext)} pre-computed embeddings")
+        else:
+            print(f"⚠️  {embeddings_pickle_path} not found.")
+            if self.idx2word and len(self.idx2word) > 0:
+                print("Computing embeddings for vocabulary...")
+                self._compute_fasttext_embeddings()
+            else:
+                print("Cannot compute embeddings without vocabulary. Disabling FastText fallback.")
+                self.use_fasttext_fallback = False
+    
+    def _compute_fasttext_embeddings(self):
+        """Compute FastText embeddings for all words in vocabulary."""
+        if self.idx2word is None:
+            print("Warning: Cannot compute embeddings without idx2word mapping")
+            self.use_fasttext_fallback = False
+            return
+        
+        print(f"Computing FastText embeddings for {len(self.idx2word)} vocabulary words...")
+        print("This will be saved to embeddings.pickle for future use...")
+        self.embeddings_fasttext = {}
+        for idx, word in tqdm(self.idx2word.items(), desc="Computing embeddings"):
+            try:
+                self.embeddings_fasttext[idx] = self.ft.get_word_vector(word)
+            except Exception as e:
+                print(f"Warning: Could not get embedding for '{word}': {e}")
+        
+        # Save for future use
+        try:
+            with open('embeddings.pickle', 'wb') as handle:
+                pickle.dump(self.embeddings_fasttext, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            print(f"Saved {len(self.embeddings_fasttext)} embeddings to embeddings.pickle")
+        except Exception as e:
+            print(f"Warning: Could not save embeddings: {e}")
+
+    def _find_closest_word_idx(self, word: str) -> Optional[int]:
+        """Find closest word in vocabulary using FastText embeddings."""
+        if not self.use_fasttext_fallback or self.ft is None or self.embeddings_fasttext is None:
             return None
         
-        return None
+        current_embedding = self.ft.get_word_vector(word)
+        
+        # Find closest embedding
+        myitem = next(iter(self.embeddings_fasttext.items()))
+        closest_embedding = myitem[1]
+        closest_embedding_index = myitem[0]
+        closest_distance = np.linalg.norm(closest_embedding - current_embedding)
+        
+        for idx, ft_embedding in self.embeddings_fasttext.items():
+            dist = np.linalg.norm(ft_embedding - current_embedding)
+            if dist < closest_distance:
+                closest_distance = dist
+                closest_embedding = ft_embedding
+                closest_embedding_index = idx
+        
+        return closest_embedding_index
+
+    def get_word_embedding(self, word: str, verbose: bool = False):
+        """Return embedding for a given word if available, with FastText fallback."""
+        word = word.lower()
+        
+        # Handle tuple format (direct embedding matrix)
+        if hasattr(self, 'embedding_matrix') and hasattr(self, 'word2idx'):
+            if word in self.word2idx:
+                idx = self.word2idx[word]
+                return self.embedding_matrix[idx], word
+            # Try fallback for tuple format
+            if self.use_fasttext_fallback:
+                closest_idx = self._find_closest_word_idx(word)
+                if closest_idx is not None:
+                    closest_word = self.idx2word[closest_idx]
+                    if verbose:
+                        print(f"Unseen word '{word}' replaced by '{closest_word}'")
+                    return self.embedding_matrix[closest_idx], closest_word
+            return None, None
+        
+        # Handle gensim format
+        try:
+            # Try to get embedding from model
+            if hasattr(self.wv, '__getitem__'):
+                return self.wv[word], word
+            elif hasattr(self.wv, 'get_vector'):
+                return self.wv.get_vector(word), word
+            elif word in self.wv:
+                return self.wv[word], word
+        except (KeyError, Exception):
+            # Word not in vocabulary, try FastText fallback
+            if self.use_fasttext_fallback:
+                closest_idx = self._find_closest_word_idx(word)
+                if closest_idx is not None and self.idx2word is not None:
+                    closest_word = self.idx2word[closest_idx]
+                    if verbose:
+                        print(f"Unseen word '{word}' replaced by '{closest_word}'")
+                    try:
+                        if hasattr(self.wv, '__getitem__'):
+                            return self.wv[closest_word], closest_word
+                        elif hasattr(self.wv, 'get_vector'):
+                            return self.wv.get_vector(closest_word), closest_word
+                    except:
+                        pass
+        
+        return None, None
 
     def group_average_similarity(self, word_indices: List[int], sim_matrix: np.ndarray) -> float:
         """Average pairwise cosine similarity within a group."""
@@ -88,19 +244,27 @@ class Node2VecEvaluator:
                 best_score, best_group = score, group
         return best_group
 
-    def predict_groups(self, words: List[str], group_size: int = 4, num_groups: int = 4) -> List[List[str]]:
+    def predict_groups(self, words: List[str], group_size: int = 4, num_groups: int = 4, 
+                      verbose: bool = False) -> List[List[str]]:
         """Predict groups of related words."""
-        valid_words, word_embs = [], []
+        valid_words, word_embs, replaced_words = [], [], {}
+        
         for w in words:
-            emb = self.get_word_embedding(w)
+            emb, actual_word = self.get_word_embedding(w, verbose=verbose)
             if emb is not None:
                 valid_words.append(w.lower())
                 word_embs.append(emb)
+                if actual_word != w.lower():
+                    replaced_words[w.lower()] = actual_word
 
         if len(valid_words) < group_size * num_groups:
-            print(f"Warning: only {len(valid_words)} valid words found.")
+            if verbose:
+                print(f"Warning: only {len(valid_words)} valid words found.")
             if len(valid_words) == 0:
                 return []  # Return empty list if no valid words are found
+        
+        if verbose and replaced_words:
+            print(f"Replaced {len(replaced_words)} words using FastText fallback")
 
         word_embs = np.array(word_embs)
         sim = cosine_similarity(np.array(word_embs))
@@ -158,7 +322,7 @@ class Node2VecEvaluator:
         try:
             data = load_connections_game(csv_path, game_id)
         except Exception as e:
-            print(f"Skipping game {game_id}: {e}")
+            print(f"⚠️ Skipping game {game_id}: {e}")
             return None
 
         true_groups = [g["words"] for g in data["groups"].values()]
@@ -211,7 +375,12 @@ class Node2VecEvaluator:
 
 def main():
     # Example usage - adjust path to your Node2Vec model
-    evaluator = Node2VecEvaluator("models/node2vec_conceptnet_subgraph_model.pkl")
+    evaluator = Node2VecEvaluator(
+        model_path="models/swow_node2vec_64d.pkl",
+        use_fasttext_fallback=True,  # Enable FastText fallback for missing words
+        fasttext_model_path='cc.en.300.bin',
+        embeddings_pickle_path='embeddings.pickle'
+    )
     
     # Evaluate on all games or a subset
     game_ids = list(range(1, 872))  # All games
