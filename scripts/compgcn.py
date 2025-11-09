@@ -211,7 +211,7 @@ def main():
     # Model hyperparameters
     in_channels = 300  # FastText embedding dimension
     hidden_channels = 128
-    out_channels = 64
+    out_channels = 128
     num_relations = len(relation_to_idx)
     num_layers = 2
     dropout = 0.3
